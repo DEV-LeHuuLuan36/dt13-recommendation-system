@@ -1,0 +1,39 @@
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Node
+node_modules/
+.pnp.*
+.yarn/
+
+# Build outputs
+dist/
+build/
+coverage/
+.vite/
+
+# Environment files (keep examples)
+.env
+.env.local
+.env.*.local
+!backend/.env.example
+!frontend/.env.example
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+*.lcov
+.nyc_output/
+
+# Backend local caches
+backend/.cache/

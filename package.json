@@ -1,0 +1,26 @@
+{
+  "name": "dt13-recommendation-system",
+  "version": "0.1.0",
+  "private": true,
+  "description": "He thong goi y san pham tuong quan su dung Neo4j - Giai doan 1: khoi tao",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n backend,frontend -c blue,green \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:backend": "npm --workspace backend run dev",
+    "dev:frontend": "npm --workspace frontend run dev",
+    "build": "npm --workspace frontend run build",
+    "lint": "npm --workspace frontend run lint && npm --workspace backend run lint",
+    "test": "npm --workspace backend test",
+    "check:neo4j": "npm --workspace backend run check:neo4j"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
+}
