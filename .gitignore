@@ -1,33 +1,56 @@
-# Logs
+# Local documentation and agent instructions (kept on disk, never tracked)
+*.md
+*.mdc
+*.mdx
+*.doc
+*.docx
+*.pdf
+*.ppt
+*.pptx
+*.xls
+*.xlsx
+docs/
+reports/
+screenshots/
+recordings/
+artifacts/
+
+# Local editor and deployment state
+.cursor/
+.vscode/
+.idea/
+.vercel/
+
+# Secrets; keep only secret-free example templates
+.env
+.env.*
+!.env.example
+!**/.env.example
+*.pem
+*.key
+
+# Logs, backups and database exports
 logs/
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+*.err
+*.out
+backups/
+db-dumps/
+local-data/
+tmp/
+temp/
 
-# Node
+# Dependencies and generated outputs
 node_modules/
-.pnp.*
-.yarn/
-
-# Build outputs
 dist/
 build/
 coverage/
 .vite/
+test-results/
+playwright-report/
+.cache/
 
-# Environment files (keep examples)
-.env
-.env.local
-.env.*.local
-!backend/.env.example
-!frontend/.env.example
-
-# Editor / OS
-.vscode/
-.idea/
+# OS files
 .DS_Store
 Thumbs.db
 

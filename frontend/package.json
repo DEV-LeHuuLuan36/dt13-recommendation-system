@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "React/Vite frontend cho DT13 Recommendation System (Giai doan 1: trang kiem tra ket noi)",
+  "description": "React/Vite frontend for the product recommendation service",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

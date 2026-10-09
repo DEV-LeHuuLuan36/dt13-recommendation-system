@@ -2,11 +2,9 @@ import { Router } from 'express';
 
 const SERVICE_NAME = 'dt13-api';
 
-/**
- * Tao router health:
- *  - GET /            : trang thai Express (khong tuyen bo Neo4j)
- *  - GET /neo4j       : trang thai Neo4j (503/200)
- */
+// Health router:
+//   GET /        — liveness only (no Neo4j call)
+//   GET /neo4j   — pings Neo4j; 503 with NEO4J_NOT_CONFIGURED if no client
 export function createHealthRouter({ neo4jClient = null, databaseName = 'neo4j' } = {}) {
   const router = Router();
 
@@ -58,9 +56,9 @@ function sanitizeError(err) {
   if (!err) return 'unknown error';
   const code = err.code || (err.cause && err.cause.code) || '';
   const message = err.message || String(err);
-  // Cat doan message si lon; chi lay phan dau.
+  // Keep only the first line and clip long stacks before redaction.
   let trimmed = message.split('\n')[0].slice(0, 240);
-  // Che cac cap khoa=giatri co the chua bi mat (password, secret, neo4j password).
+  // Redact key=value pairs that may carry secrets (password, neo4j password).
   trimmed = trimmed
     .replace(/(password\s*=\s*)([^\s,;]+)/gi, '$1***')
     .replace(/(neo4j password[^,;\n]*)/gi, 'neo4j password ***')
@@ -70,7 +68,6 @@ function sanitizeError(err) {
   return trimmed;
 }
 
-/** Promise.race nho, tu timeout neu qua han. */
 function runWithTimeout(promise, ms, message) {
   let timer;
   const timeout = new Promise((_, reject) => {
@@ -79,5 +76,4 @@ function runWithTimeout(promise, ms, message) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-// Re-export de test/other modules su dung neu can.
 export { SERVICE_NAME, sanitizeError };

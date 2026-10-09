@@ -3,14 +3,21 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Express backend cho DT13 Recommendation System (Giai doan 1: health va kiem tra Neo4j)",
+  "description": "Express backend for the product recommendation service",
   "main": "src/server.js",
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "lint": "eslint src scripts test --max-warnings 0",
     "check:neo4j": "node scripts/check-neo4j.js",
-    "test": "node --test --test-reporter=spec \"test/**/*.test.js\""
+    "db:schema": "node scripts/db-schema.js",
+    "db:seed": "node scripts/db-seed.js",
+    "db:verify": "node scripts/db-verify.js",
+    "db:verify:clean": "node scripts/db-verify-clean.js",
+    "db:seed:reference": "node scripts/db-seed-reference.js",
+    "test": "node --test --test-concurrency=1 --test-force-exit --test-reporter=spec \"test/**/*.test.js\"",
+    "profile:recommendations": "node scripts/profile-recommendations.js",
+    "benchmark:recommendations": "node scripts/benchmark-recommendations.js"
   },
   "engines": {
     "node": ">=20.0.0"

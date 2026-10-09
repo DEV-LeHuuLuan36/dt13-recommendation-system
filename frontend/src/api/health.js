@@ -1,6 +1,4 @@
-/**
- * Tra ve state: 'loading' | 'connected' | 'not-configured' | 'error'
- */
+// Returns state: 'loading' | 'connected' | 'not-configured' | 'error'.
 function classify(status, body, fetchError) {
   if (fetchError) {
     return { status: 'error', detail: null, error: fetchError.message };
@@ -40,7 +38,7 @@ export async function fetchApiHealth() {
     const body = await safeJson(res);
     return classify(res.status, body, null);
   } catch (err) {
-    return { status: 'error', detail: null, error: `Khong goi duoc /api/health: ${err.message}` };
+    return { status: 'error', detail: null, error: `Không gọi được /api/health: ${err.message}` };
   }
 }
 
@@ -50,6 +48,6 @@ export async function fetchNeo4jHealth() {
     const body = await safeJson(res);
     return classify(res.status, body, null);
   } catch (err) {
-    return { status: 'error', detail: null, error: `Khong goi duoc /api/health/neo4j: ${err.message}` };
+    return { status: 'error', detail: null, error: `Không gọi được /api/health/neo4j: ${err.message}` };
   }
 }

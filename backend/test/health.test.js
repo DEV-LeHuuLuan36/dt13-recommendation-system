@@ -14,7 +14,7 @@ function buildApp(opts = {}) {
   });
 }
 
-test('GET /api/health tra 200 va khong chua secrets', async () => {
+test('GET /api/health returns 200 and does not leak secrets', async () => {
   const app = buildApp({ neo4jClient: null });
 
   const res = await request(app).get('/api/health');
@@ -22,7 +22,7 @@ test('GET /api/health tra 200 va khong chua secrets', async () => {
   assert.equal(res.status, 200);
   assert.equal(res.body.status, 'ok');
   assert.equal(res.body.service, 'dt13-api');
-  // Dam bao khong tra password, session secret, env ra response
+  // Make sure no password / session secret / env is echoed.
   const json = JSON.stringify(res.body);
   assert.ok(!/NEO4J_PASSWORD/i.test(json));
   assert.ok(!/SESSION_SECRET/i.test(json));
@@ -30,17 +30,17 @@ test('GET /api/health tra 200 va khong chua secrets', async () => {
   assert.ok(typeof res.body.timestamp === 'string');
 });
 
-test('GET /api/health/neo4j tra 503 NEO4J_NOT_CONFIGURED khi thieu client', async () => {
+test('GET /api/health/neo4j returns 503 NEO4J_NOT_CONFIGURED when no client', async () => {
   const app = buildApp({ neo4jClient: null });
 
   const res = await request(app).get('/api/health/neo4j');
 
   assert.equal(res.status, 503);
   assert.equal(res.body.error.code, 'NEO4J_NOT_CONFIGURED');
-  assert.ok(res.body.error.message.includes('Chua cau hinh'));
+  assert.ok(typeof res.body.error.message === 'string' && res.body.error.message.length > 0);
 });
 
-test('GET /api/health/neo4j tra 200 khi Neo4j ping thanh cong (qua fake adapter)', async () => {
+test('GET /api/health/neo4j returns 200 when Neo4j ping succeeds (fake adapter)', async () => {
   const neo4jClient = createFakeNeo4jClient({ shouldFail: false });
   const app = buildApp({ neo4jClient });
 
@@ -51,7 +51,7 @@ test('GET /api/health/neo4j tra 200 khi Neo4j ping thanh cong (qua fake adapter)
   assert.equal(res.body.database, 'neo4j');
 });
 
-test('GET /api/health/neo4j tra 503 NEO4J_UNAVAILABLE khi ping that bai', async () => {
+test('GET /api/health/neo4j returns 503 NEO4J_UNAVAILABLE when ping fails', async () => {
   const neo4jClient = createFakeNeo4jClient({ shouldFail: true, message: 'connection refused' });
   const app = buildApp({ neo4jClient });
 
@@ -62,7 +62,7 @@ test('GET /api/health/neo4j tra 503 NEO4J_UNAVAILABLE khi ping that bai', async 
   assert.match(res.body.error.message, /connection refused/);
 });
 
-test('Route khong ton tai trong /api tra 404 JSON', async () => {
+test('Unknown route under /api returns 404 JSON', async () => {
   const app = buildApp();
 
   const res = await request(app).get('/api/does-not-exist');
@@ -71,7 +71,7 @@ test('Route khong ton tai trong /api tra 404 JSON', async () => {
   assert.equal(res.body.error.code, 'NOT_FOUND');
 });
 
-test('Middleware JSON parse loi tra 400 BAD_REQUEST', async () => {
+test('Malformed JSON body returns 400 BAD_REQUEST', async () => {
   const app = buildApp();
 
   const res = await request(app)

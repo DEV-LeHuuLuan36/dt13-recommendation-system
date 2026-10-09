@@ -2,7 +2,7 @@
   "name": "dt13-recommendation-system",
   "version": "0.1.0",
   "private": true,
-  "description": "He thong goi y san pham tuong quan su dung Neo4j - Giai doan 1: khoi tao",
+  "description": "Product recommendation service on Neo4j",
   "workspaces": [
     "frontend",
     "backend"
@@ -14,7 +14,12 @@
     "build": "npm --workspace frontend run build",
     "lint": "npm --workspace frontend run lint && npm --workspace backend run lint",
     "test": "npm --workspace backend test",
-    "check:neo4j": "npm --workspace backend run check:neo4j"
+    "check:neo4j": "npm --workspace backend run check:neo4j",
+    "db:schema": "npm --workspace backend run db:schema",
+    "db:seed": "npm --workspace backend run db:seed",
+    "db:verify": "npm --workspace backend run db:verify",
+    "profile:recommendations": "npm --workspace backend run profile:recommendations",
+    "benchmark:recommendations": "npm --workspace backend run benchmark:recommendations"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

@@ -1,184 +1,206 @@
-.app-shell {
-  max-width: 960px;
-  margin: 0 auto;
-  padding: 32px 20px 48px;
+/* App shell: header + main + bottom-nav (mobile) */
+.app {
+  min-height: 100vh;
+  background: var(--page);
+  display: flex;
+  flex-direction: column;
+}
+
+.app-loading,
+.app-login {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: var(--page);
+  color: var(--muted);
+  padding: 24px;
 }
 
 .app-header {
-  text-align: left;
-  margin-bottom: 24px;
-}
-
-.eyebrow {
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  font-size: 0.75rem;
-  color: var(--primary);
-  font-weight: 600;
-  margin: 0 0 8px;
-}
-
-.app-header h1 {
-  font-size: clamp(1.6rem, 2.4vw + 1rem, 2.4rem);
-  margin-bottom: 12px;
-}
-
-.lede {
-  color: var(--muted);
-  margin: 0;
-  font-size: 1rem;
-}
-
-.status-grid {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  margin-bottom: 24px;
-}
-
-.health-card {
   background: var(--surface);
-  border-radius: var(--radius);
-  padding: 20px;
-  box-shadow: var(--shadow);
-  border: 1px solid var(--border);
-  border-left-width: 4px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 30;
 }
 
-.health-card header {
+.app-header__inner {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
+  gap: 16px;
+  min-height: 64px;
+  padding-block: 10px;
 }
 
-.health-card h2 {
-  font-size: 1.1rem;
-}
-
-.health-card__desc {
-  margin: 0 0 12px;
-  color: var(--muted);
-  font-size: 0.95rem;
-}
-
-.health-card__meta {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.85rem;
-}
-
-.health-card__error {
-  margin: 12px 0 0;
-  padding: 8px 12px;
-  background: var(--danger-bg);
-  color: var(--danger);
-  border-radius: 8px;
-  font-size: 0.9rem;
-}
-
-.health-card__extra {
-  margin: 0 0 12px;
-  padding-left: 18px;
-  color: var(--muted);
-  font-size: 0.9rem;
-}
-
-.health-card--loading {
-  border-left-color: var(--info);
-}
-.health-card--connected {
-  border-left-color: var(--success);
-}
-.health-card--not-configured {
-  border-left-color: var(--warn);
-}
-.health-card--error {
-  border-left-color: var(--danger);
-}
-
-.status-badge {
+.app-brand {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  background: var(--neutral-bg);
-  color: var(--neutral);
+  gap: 10px;
+  color: var(--text);
+  background: none;
+  border: none;
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 18px;
+  padding: 0;
 }
-
-.status-badge__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: currentColor;
-}
-
-.status-badge--loading {
-  background: var(--info-bg);
-  color: var(--info);
-}
-.status-badge--connected {
-  background: var(--success-bg);
-  color: var(--success);
-}
-.status-badge--not-configured {
-  background: var(--warn-bg);
-  color: var(--warn);
-}
-.status-badge--error {
-  background: var(--danger-bg);
-  color: var(--danger);
-}
-
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 16px;
-  padding: 16px 20px;
-  background: var(--surface);
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow);
-}
-
-.actions button {
+.app-brand:hover { text-decoration: none; }
+.app-brand__mark {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
   background: var(--primary);
-  color: #ffffff;
-  padding: 10px 18px;
+  color: #fff;
+  font-weight: 700;
+}
+.app-brand__text { letter-spacing: 0.01em; }
+
+.app-header__nav {
+  display: none;
+  gap: 4px;
+  margin-left: 12px;
+}
+.app-nav__link {
+  padding: 8px 14px;
   border-radius: 8px;
-  font-weight: 600;
-  transition: background 0.15s ease;
-}
-
-.actions button:hover:not(:disabled) {
-  background: var(--primary-strong);
-}
-
-.last-checked {
-  margin: 0;
   color: var(--muted);
-  font-size: 0.9rem;
+  font-weight: 500;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: none;
+}
+.app-nav__link:hover { color: var(--text); background: var(--selected); }
+.app-nav__link--active { color: var(--primary-active); background: var(--selected); }
+
+.app-account {
+  margin-left: auto;
+  position: relative;
+}
+.app-account__btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0;
+  padding: 6px 12px;
+  border-radius: 10px;
+  min-height: 44px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.app-account__btn:hover { background: var(--selected); }
+.app-account__name { font-size: 14px; font-weight: 500; line-height: 1.1; }
+.app-account__role { font-size: 11px; color: var(--muted); }
+.app-account__menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 220px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  z-index: 40;
+}
+.app-account__menu-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+.app-account__item {
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 6px;
+  color: var(--text);
+  min-height: 40px;
+  background: none;
+  border: none;
+}
+.app-account__item:hover { background: var(--selected); }
+
+/* Thanh danh muc nho ben duoi header */
+.app-category-strip {
+  background: var(--page);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.app-category-strip__inner {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-block: 8px;
+  scrollbar-width: thin;
+}
+.app-category-strip__chip {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  min-height: 36px;
+}
+.app-category-strip__chip:hover { background: var(--selected); }
+
+.app-main {
+  flex: 1;
+  padding-block: 16px 96px; /* bottom-nav space on mobile */
 }
 
-.app-footer {
-  margin-top: 32px;
-  font-size: 0.85rem;
+.app-bottom-nav {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0));
+  z-index: 30;
+}
+.app-bottom-nav__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  border-radius: 8px;
   color: var(--muted);
-  text-align: center;
+  font-size: 12px;
+  min-height: var(--tap);
+  background: none;
+  border: none;
+}
+.app-bottom-nav__item--active { color: var(--primary-active); background: var(--selected); }
+.app-bottom-nav__icon { font-size: 18px; line-height: 1; }
+
+.skip-link {
+  position: absolute;
+  left: -10000px;
+  top: auto;
+  width: 1px; height: 1px; overflow: hidden;
+}
+.skip-link:focus {
+  left: 12px; top: 12px; width: auto; height: auto;
+  padding: 8px 12px;
+  background: var(--primary);
+  color: #fff;
+  border-radius: 8px;
+  z-index: 100;
 }
 
-@media (max-width: 480px) {
-  .app-shell {
-    padding: 24px 16px 36px;
-  }
-
-  .actions {
-    flex-direction: column;
-    align-items: flex-start;
-  }
+@media (min-width: 760px) {
+  .app-header__nav { display: inline-flex; }
+  .app-bottom-nav { display: none; }
+  .app-main { padding-bottom: 32px; }
 }

@@ -2,12 +2,10 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/**
- * Load env tu `backend/.env.local` hoac `backend/.env` neu ton tai.
- * Tra ve object config da chuan hoa. Khong in secrets.
- */
+// Load `backend/.env.local` then `backend/.env` and merge into the env object.
+// Never log secrets.
 export function loadConfig(env = process.env, { cwd = process.cwd() } = {}) {
-  // Tim file .env.local roi den .env (uu tien .env.local)
+  // .env.local takes precedence over .env.
   const envFiles = ['.env.local', '.env'];
   const merged = { ...env };
 
@@ -43,7 +41,7 @@ export function loadConfig(env = process.env, { cwd = process.cwd() } = {}) {
     neo4jPassword,
     neo4jDatabase,
     sessionSecret,
-    /** Tinh day du cau hinh Neo4j (URI + username + password + database) */
+    // True when all four Neo4j fields are present.
     get neo4jFullyConfigured() {
       return Boolean(neo4jUri && neo4jUsername && neo4jPassword && neo4jDatabase);
     },
@@ -56,12 +54,7 @@ function parsePort(value, fallback) {
   return num;
 }
 
-/**
- * Parse file .env don gian (khong can dependency).
- * - Bo qua comment (#)
- * - Bo qua dong trong
- * - Xu ly quote don/kep tuy chon
- */
+// Minimal .env parser that skips comments and empty lines; optional single or double quotes are stripped.
 export function parseEnvFile(filePath) {
   const text = readFileSync(filePath, 'utf8');
   const result = {};
@@ -84,5 +77,5 @@ export function parseEnvFile(filePath) {
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-// Allow using `loadConfig()` without cwd argument; default to backend dir if running from there.
+// Resolves to `backend/` regardless of where the process was started.
 export const backendRoot = resolve(__dirname, '..');

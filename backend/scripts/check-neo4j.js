@@ -1,14 +1,12 @@
 #!/usr/bin/env node
 /**
- * `npm run check:neo4j`
- *
- * Doc config tu backend/.env, kiem tra day du, tao driver va thuc hien truy van doc.
- *  - Thanh cong (RETURN 1): exit 0, in thong tin phien ban/edition neu co quyen.
- *  - Thieu config: exit 2.
- *  - Loi ket noi: exit 3.
- *  - Loi khac: exit 4.
- *
- * KHONG in mat khau hoac secret ra stdout/stderr.
+ * `npm run check:neo4j` — reads backend/.env, verifies config, opens a
+ * driver, and runs a read query. Exit codes:
+ *   0 — OK
+ *   2 — missing/invalid config
+ *   3 — connection failure
+ *   4 — other error
+ * Never logs passwords or session secrets.
  */
 import neo4j from 'neo4j-driver';
 import { loadConfig, backendRoot } from '../src/config.js';

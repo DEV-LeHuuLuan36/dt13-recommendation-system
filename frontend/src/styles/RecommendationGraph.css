@@ -1,0 +1,58 @@
+.admin-graph__form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.admin-graph__layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.admin-graph__graph {
+  grid-column: 1 / -1;
+}
+
+.admin-graph__items h3,
+.admin-graph__graph h3,
+.admin-graph__contrib h3 {
+  font-size: 1rem;
+  margin: 0 0 8px;
+}
+
+.admin-graph__svg {
+  width: 100%;
+  max-width: 760px;
+  height: auto;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #f8fafc;
+  display: block;
+}
+
+.admin-graph__legend {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+  padding: 0;
+}
+
+.admin-graph__legend .dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+@media (max-width: 720px) {
+  .admin-graph__layout {
+    grid-template-columns: 1fr;
+  }
+}

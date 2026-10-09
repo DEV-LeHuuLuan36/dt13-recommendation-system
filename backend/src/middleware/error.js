@@ -1,11 +1,8 @@
-/**
- * Middleware xu ly loi tap trung. Tra JSON dong nhat theo hop dong API o muc 7.
- */
+// Centralized error handler: emits the API's standard error envelope.
 export function errorHandler(err, req, res, next) {
   if (res.headersSent) {
     return next(err);
   }
-  // Loi co status thi giu nguyen, nguoc lai 500.
   const status = Number.isInteger(err.status) ? err.status : 500;
   const code = err.code || (status >= 500 ? 'INTERNAL_ERROR' : 'BAD_REQUEST');
   const message = err.expose === false ? 'Internal Server Error' : err.message || 'Server error';
@@ -22,7 +19,7 @@ export function errorHandler(err, req, res, next) {
   });
 }
 
-/** Tra 404 JSON cho cac duong tra khong ton tai trong /api. */
+// JSON 404 for any unknown /api route. Other methods are left to Express' default handler.
 export function notFoundHandler(req, res, next) {
   if (req.method !== 'GET' && req.method !== 'POST' && req.method !== 'PATCH' && req.method !== 'DELETE') {
     return next();

@@ -1,0 +1,81 @@
+.product-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.product-detail__breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+.product-detail__breadcrumb a {
+  color: var(--primary-active);
+  text-decoration: none;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+}
+.product-detail__breadcrumb a:hover { text-decoration: underline; }
+.product-detail__breadcrumb span[aria-current] { color: var(--text); font-weight: 500; }
+
+.product-detail__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: var(--shadow);
+}
+.product-detail__image-wrap {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 4 / 3;
+  padding: 16px;
+  background: #fcfcfa;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.product-detail__image {
+  width: 100%;
+  height: 100%;
+  max-height: 480px;
+  object-fit: contain;
+  display: block;
+}
+.product-detail__info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.product-detail__brand { margin: 0; color: var(--muted); font-size: 13px; }
+.product-detail__name { font-size: clamp(1.3rem, 1.6vw + 0.6rem, 1.8rem); margin: 0; }
+.product-detail__price { color: var(--primary); font-size: 24px; font-weight: 700; margin: 4px 0; }
+.product-detail__desc { margin: 4px 0 0; line-height: 1.6; }
+
+.purchase-form {
+  margin-top: 16px;
+  background: var(--page);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.purchase-form h2 { font-size: 1.1rem; margin: 0 0 4px; }
+.purchase-form__quantity { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+.purchase-form__submit { width: 100%; }
+
+@media (min-width: 760px) {
+  .product-detail__grid {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+    gap: 32px;
+  }
+  .product-detail__info { padding: 8px 4px; }
+}
