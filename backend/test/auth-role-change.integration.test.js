@@ -1,12 +1,12 @@
 /**
- * Integration test cho role/active change voi Neo4j that.
+ * Integration test for role/active changes against a real Neo4j.
  *
- * PROMPT_HOAN_TAT_GIAI_DOAN_2 muc 9:
- *  - Tao 1 admin gia (fix role=admin) trong fixture rieng
- *  - Login -> /me role=admin
- *  - Update role trong DB (set role='customer')
- *  - /me phai tra role='customer' (session cu khong con quyen)
- *  - Cleanup fixture.
+ * Verifies that:
+ *  - Login succeeds for a fixture admin and /me returns role=admin.
+ *  - Demoting the role in the DB makes subsequent /me reflect the new role,
+ *    and the previous session can no longer hit admin-only routes.
+ *  - Inactive accounts are rejected at login.
+ *  - The /me payload never includes passwordHash/salt or any other private field.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -33,10 +33,10 @@ async function setupFixtureCustomer(session, runId, role) {
   return { customerId, email, password, role };
 }
 
-test('integration: role change + inactive theo PROMPT_GIAI_DOAN_2', async (t) => {
+test('integration: role change + inactive', async (t) => {
   const config = loadConfig();
   if (!config.neo4jFullyConfigured) {
-    t.skip('NEO4J khong cau hinh; bo qua.');
+    t.skip('NEO4J not configured; skipping.');
     return;
   }
   const driver = neo4j.driver(
@@ -66,23 +66,23 @@ test('integration: role change + inactive theo PROMPT_GIAI_DOAN_2', async (t) =>
     }
   });
 
-  await t.test('demote role: admin -> customer, session cu mat quyen', async () => {
+  await t.test('demote role: admin -> customer, existing session loses admin privilege', async () => {
     const runId = `DT13_TEST_AUTH_${randomBytes(4).toString('hex')}`;
     const fx = await setupFixtureCustomer(session, runId, 'admin');
 
     const login = await request(app).post('/api/auth/login').send({ email: fx.email, password: fx.password });
-    assert.equal(login.status, 200, `Login that bai: ${JSON.stringify(login.body)}`);
+    assert.equal(login.status, 200, `Login failed: ${JSON.stringify(login.body)}`);
     assert.equal(login.body.profile.role, 'admin');
     assert.equal(login.body.profile.customerId, fx.customerId);
     const cookie = login.headers['set-cookie']?.[0]?.split(';')[0];
-    assert.ok(cookie, 'Phai co cookie');
+    assert.ok(cookie, 'session cookie must be set');
 
     const me1 = await request(app).get('/api/auth/me').set('Cookie', cookie);
     assert.equal(me1.status, 200);
     assert.equal(me1.body.profile.role, 'admin');
 
     const r1 = await request(app).get('/api/analytics/graph-stats').set('Cookie', cookie);
-    assert.equal(r1.status, 200, `Admin route phai 200 truoc khi demote nhung la ${r1.status}`);
+    assert.equal(r1.status, 200, `Admin route must return 200 before demote, got ${r1.status}`);
 
     await session.executeWrite(async (tx) => {
       await tx.run(`MATCH (c:Customer { customerId: $cid }) SET c.role = 'customer'`, { cid: fx.customerId });
@@ -90,15 +90,15 @@ test('integration: role change + inactive theo PROMPT_GIAI_DOAN_2', async (t) =>
 
     const me2 = await request(app).get('/api/auth/me').set('Cookie', cookie);
     assert.equal(me2.status, 200);
-    assert.equal(me2.body.profile.role, 'customer', 'Sau demote, /me phai tra role=customer');
+    assert.equal(me2.body.profile.role, 'customer', 'After demote, /me must report role=customer');
     assert.equal(me2.body.profile.customerId, fx.customerId);
     assert.doesNotMatch(JSON.stringify(me2.body), /passwordHash|salt/);
 
     const r2 = await request(app).get('/api/analytics/graph-stats').set('Cookie', cookie);
-    assert.equal(r2.status, 403, `Sau demote, admin route phai 403 nhung ${r2.status}`);
+    assert.equal(r2.status, 403, `After demote, admin route must be 403 but was ${r2.status}`);
   });
 
-  await t.test('inactive: login that bai 403 voi ACCOUNT_DISABLED', async () => {
+  await t.test('inactive: login is rejected with 403 ACCOUNT_INACTIVE', async () => {
     const runId = `DT13_TEST_AUTH_${randomBytes(4).toString('hex')}`;
     const fx = await setupFixtureCustomer(session, runId, 'customer');
     await session.executeWrite(async (tx) => {
@@ -109,7 +109,7 @@ test('integration: role change + inactive theo PROMPT_GIAI_DOAN_2', async (t) =>
     assert.equal(res.body.error?.code, 'ACCOUNT_INACTIVE');
   });
 
-  await t.test('profile chi chua whitelist (khong co passwordHash)', async () => {
+  await t.test('/me profile contains only whitelisted fields (no passwordHash)', async () => {
     const runId = `DT13_TEST_AUTH_${randomBytes(4).toString('hex')}`;
     const fx = await setupFixtureCustomer(session, runId, 'customer');
     const login = await request(app).post('/api/auth/login').send({ email: fx.email, password: fx.password });

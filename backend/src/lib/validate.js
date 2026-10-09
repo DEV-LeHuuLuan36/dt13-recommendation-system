@@ -1,7 +1,5 @@
-/**
- * Cac ham validation dung chung cho cac route CRUD/interactions/history.
- * Tra ve ket qua normalized hoac nem Error voi { status, code, message }.
- */
+// Shared validators for CRUD/interactions/history routes. Each function returns
+// a normalized value or throws a ValidationError carrying { status, code }.
 
 const EMAIL_REGEX = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const ID_REGEX = /^[A-Za-z][A-Za-z0-9_-]*$/;
@@ -14,13 +12,16 @@ export const MIN_PASSWORD_LEN = 8;
 export const MAX_ID_LEN = 64;
 export const MAX_EVENT_ID_LEN = 128;
 export const MAX_URL_LEN = 2048;
-export const MAX_PRICE = 1_000_000_000_000; // 1k ty VND, tran Number.MAX_SAFE_INTEGER
+export const MAX_PRICE = 1_000_000_000_000; // 1 trillion VND; well below Number.MAX_SAFE_INTEGER
 export const MIN_PRICE = 0;
 export const MAX_QUANTITY = 1000;
 export const MIN_QUANTITY = 1;
 export const DEFAULT_PAGE = 1;
 export const DEFAULT_PAGE_SIZE = 12;
 export const MAX_PAGE_SIZE = 50;
+export const PRODUCT_SORT_KEYS = new Set([
+  '', 'relevance', 'price_asc', 'price_desc', 'name_asc', 'name_desc', 'newest',
+]);
 
 export class ValidationError extends Error {
   constructor(message, code = 'INVALID_INPUT') {
@@ -202,10 +203,39 @@ export function validateHistoryType(value) {
   return value;
 }
 
-/**
- * Dam bao body chi chua cac key trong whitelist. Tra ve object voi cac key do.
- * Neu co key ngoai whitelist, throw ValidationError.
- */
+export function validateProductSort(value) {
+  if (value === undefined || value === null || value === '') return '';
+  if (typeof value !== 'string') throw new ValidationError('sort phai la chuoi.');
+  if (!PRODUCT_SORT_KEYS.has(value)) {
+    throw new ValidationError('sort khong hop le. Cho phep: ' + Array.from(PRODUCT_SORT_KEYS).filter(Boolean).join(', '));
+  }
+  return value;
+}
+
+export function validatePriceRange({ min, max }) {
+  let minVal = null;
+  let maxVal = null;
+  if (min !== undefined && min !== null && min !== '') {
+    const n = Number(min);
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0 || n > MAX_PRICE) {
+      throw new ValidationError('priceMin phai la so nguyen trong [0, ' + MAX_PRICE + '].');
+    }
+    minVal = n;
+  }
+  if (max !== undefined && max !== null && max !== '') {
+    const n = Number(max);
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0 || n > MAX_PRICE) {
+      throw new ValidationError('priceMax phai la so nguyen trong [0, ' + MAX_PRICE + '].');
+    }
+    maxVal = n;
+  }
+  if (minVal !== null && maxVal !== null && minVal > maxVal) {
+    throw new ValidationError('priceMin phai nho hon hoac bang priceMax.');
+  }
+  return { min: minVal, max: maxVal };
+}
+
+// Keep only allowed keys; throw if the body has unknown fields. This locks the public contract.
 export function pickAllowed(body, allowed, { allowEmpty = false } = {}) {
   if (body === null || body === undefined) {
     if (allowEmpty) return {};

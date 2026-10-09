@@ -10,14 +10,10 @@ import {
 } from '../lib/validate.js';
 import { toNumber } from '../lib/mappers.js';
 
-/**
- * Recommendation routes (Giai doan 4):
- *  - GET /api/recommendations/me?limit=
- *  - GET /api/recommendations/products/:productId?limit=
- *
- * Ca hai chi danh cho Customer (role=customer, active=true).
- * `customerId` luon lay tu session, khong nhan tu query/body.
- */
+// Recommendation routes — customer-only.
+//   GET /api/recommendations/me?limit=
+//   GET /api/recommendations/products/:productId?limit=
+// customerId always comes from the session, never from the query/body.
 
 const DEFAULT_LIMIT = 5;
 const MIN_LIMIT = 1;
@@ -41,10 +37,7 @@ function requireClient(neo4jClient) {
   }
 }
 
-/**
- * Validate va chuan hoa `limit` (1..20). Khong parseInt im lang: tu choi 0/21/abc/1.5.
- * Tra ve Number nguyen.
- */
+// Parse and validate `limit` (1..20). Rejects 0, 21, "abc", 1.5 explicitly.
 function parseLimit(raw) {
   if (raw === undefined || raw === null || raw === '') return DEFAULT_LIMIT;
   if (typeof raw === 'string') {
@@ -72,10 +65,7 @@ function parseLimit(raw) {
   throw Object.assign(new Error('limit phai la so nguyen.'), { status: 400, code: 'INVALID_LIMIT' });
 }
 
-/**
- * Chuyen sang neo4j.int cho truy van LIMIT (driver yeu cau Integer de tranh ban
- * nhap parameters integer kieu Number thanh float).
- */
+// neo4j.int avoids integer-to-float coercion when binding LIMIT parameters.
 function toIntParam(n) {
   return neo4j.int(n);
 }
@@ -110,12 +100,7 @@ function reasonForCoBought(support) {
 export function createRecommendationsRouter({ neo4jClient }) {
   const router = Router();
 
-  /**
-   * GET /api/recommendations/me
-   *
-   * Phuong phap: user_cf (cong tac loc).
-   * Tra `{ method, limit, items, reason }`. items=[] khi khong co ung vien.
-   */
+  // GET /api/recommendations/me — user_cf over the customer's purchase history.
   router.get(
     '/me',
     asyncHandler(async (req, res) => {
@@ -151,12 +136,8 @@ export function createRecommendationsRouter({ neo4jClient }) {
     })
   );
 
-  /**
-   * GET /api/recommendations/products/:productId
-   *
-   * Phuong phap: co_bought. source phai active (customer xem hang inactive -> 404).
-   * Tra `{ method, sourceProductId, limit, items, reason }`.
-   */
+  // GET /api/recommendations/products/:productId — co_bought from the given source product.
+  // 404 if the source is missing or inactive.
   router.get(
     '/products/:productId',
     asyncHandler(async (req, res) => {
@@ -166,7 +147,6 @@ export function createRecommendationsRouter({ neo4jClient }) {
       const customerId = req.auth.customerId;
       const limit = parseLimit(req.query.limit);
 
-      // Kiem tra source ton tai va (neu la customer xem) phai active.
       let sourceResult;
       try {
         sourceResult = await runRead(neo4jClient, QUERIES.findSourceProduct, { productId });

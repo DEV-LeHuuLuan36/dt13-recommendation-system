@@ -1,21 +1,19 @@
 #!/usr/bin/env node
 /**
- * `npm run db:seed`
+ * `npm run db:seed` — loads the DT13_SEED_V1 dataset into Neo4j.
+ * Idempotent via MERGE/ON CREATE; never overwrites existing passwordHash,
+ * price, or timestamps.
  *
- * Nap dataset seed (DT13_SEED_V1) vao Neo4j.
- * Idempotent: MERGE/ON CREATE; bao ve passwordHash/price/time da co.
+ * Flow:
+ *  1. Read DEMO_ADMIN_PASSWORD / DEMO_CUSTOMER_PASSWORD from env; if missing,
+ *     generate with node:crypto and append to backend/.env (local only).
+ *  2. Build + offline-validate the seed dataset.
+ *  3. Hash the demo passwords before opening the transaction.
+ *  4. Open one session and one executeWrite() wrapping all 6 steps; any
+ *     throw rolls back the whole transaction.
+ *  5. Log the counts after the commit for cross-checking.
  *
- * Cau truc:
- *  1. Doc DEMO_ADMIN_PASSWORD va DEMO_CUSTOMER_PASSWORD tu env.
- *     Neu khong co: sinh bang node:crypto, ghi vao backend/.env (LOCAL ONLY).
- *  2. Tao dataset (generator) va validate offline.
- *  3. Hash mat khau TRUOC khi mo transaction.
- *  4. Mo mot session va mot executeWrite() chua toan bo 6 buoc.
- *     Truyen `tx` xuong cac helper; neu helper nao throw, transaction rollback
- *     va khong ghi gi them.
- *  5. Sau transaction: in count da ghi de cross-check.
- *
- * Khong thuc hien side effect (ghi .env, log mat khau, ...) trong callback.
+ * No side effects (writing .env, logging passwords) happen inside the callback.
  */
 import neo4j from 'neo4j-driver';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
@@ -38,9 +36,9 @@ function log(msg) { console.log(`[db-seed] ${msg}`); }
 function logErr(msg) { console.error(`[db-seed] ${msg}`); }
 
 /**
- * Dam bao co DEMO_ADMIN_PASSWORD va DEMO_CUSTOMER_PASSWORD trong .env.
- * Neu thieu: sinh bang node:crypto, append vao file (khong ghi de).
- * KHONG in gia tri.
+ * Ensure DEMO_ADMIN_PASSWORD and DEMO_CUSTOMER_PASSWORD exist in .env.
+ * If missing, generate them with node:crypto and append to the file (do not
+ * overwrite). Never print the values.
  */
 async function ensureDemoPasswords() {
   let env = {};
@@ -55,19 +53,19 @@ async function ensureDemoPasswords() {
   const existing = readFileSync(envPath, 'utf8');
   const sep = existing.endsWith('\n') ? '' : '\n';
   writeFileSync(envPath, existing + sep + appendLines.join('\n') + '\n', 'utf8');
-  log('Da sinh DEMO_* password moi va ghi vao backend/.env (LOCAL ONLY, khong in).');
+  log('Generated new DEMO_* passwords and appended to backend/.env (local only, not printed).');
   return { adminPassword: updates.DEMO_ADMIN_PASSWORD, customerPassword: updates.DEMO_CUSTOMER_PASSWORD };
 }
 
 async function main() {
   const config = loadConfig();
   if (!config.neo4jFullyConfigured) {
-    logErr('NEO4J_NOT_CONFIGURED: thieu NEO4J_URI/USERNAME/PASSWORD/DATABASE trong backend/.env.');
+    logErr('NEO4J_NOT_CONFIGURED: missing NEO4J_URI/USERNAME/PASSWORD/DATABASE in backend/.env.');
     process.exit(EXIT_FAIL);
   }
   const { adminPassword, customerPassword } = await ensureDemoPasswords();
   if (!adminPassword || !customerPassword) {
-    logErr('Khong co DEMO_ADMIN_PASSWORD hoac DEMO_CUSTOMER_PASSWORD.');
+    logErr('Missing DEMO_ADMIN_PASSWORD or DEMO_CUSTOMER_PASSWORD.');
     process.exit(EXIT_FAIL);
   }
 
@@ -75,7 +73,7 @@ async function main() {
   const dataset = generateSeedDataset();
   const validate = validateSeedDataset(dataset);
   if (!validate.ok) {
-    logErr(`Dataset validation that bai: ${validate.errors.join('; ')}`);
+    logErr(`Dataset validation failed: ${validate.errors.join('; ')}`);
     process.exit(EXIT_FAIL);
   }
   log(`Dataset generator: products=${dataset.products.length}, customers=${dataset.customers.length}, categories=${dataset.categories.length}, bought=${dataset.bought.length}, viewed=${dataset.viewed.length}, marker=${dataset.marker}`);
@@ -93,8 +91,8 @@ async function main() {
 
   let exit = EXIT_OK;
   try {
-    // (3) Mot executeWrite duy nhat, callback chi chay tx.run.
-    // Neu bat ky buoc nao throw, transaction se rollback toan bo.
+    // (3) One executeWrite; callback only calls tx.run. Any throw here
+    // rolls the whole transaction back.
     const totals = await runSeedInTransaction(session, dataset, adminHash, customerHash);
     log(`Transaction OK: ${JSON.stringify(totals)}`);
   } catch (err) {

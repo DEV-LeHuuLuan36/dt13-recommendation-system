@@ -1,15 +1,7 @@
 /**
- * Module password su dung node:crypto scrypt.
- *
- * Dinh dang hash: scrypt$N$r$p$saltB64$hashB64
- *  - N, r, p: tham so scrypt
- *  - saltB64: salt ngau nhien (16 bytes mac dinh)
- *  - hashB64: ket qua scrypt (64 bytes mac dinh)
- *
- * Thuat toan:
- *  - scrypt(SHA-256) trong nodejs cung cap san qua crypto.scrypt, mac dinh SHA-256.
- *  - salt moi cho moi tai khoan, khong reuse.
- *  - verify dung crypto.timingSafeEqual voi buffer cung do dai.
+ * Password hashing with node:crypto scrypt.
+ * Hash format: scrypt$N$r$p$saltB64$hashB64 (N/r/p are scrypt cost parameters).
+ * Each password gets a fresh random salt; comparison uses timingSafeEqual.
  */
 
 import { randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
@@ -28,24 +20,16 @@ export function isValidPassword(plain) {
   return typeof plain === 'string' && plain.length >= 1 && plain.length <= 256;
 }
 
-/**
- * Tao hash cho mat khau. Tra ve string luu vao DB.
- * Tra ve Promise<string>.
- */
 export async function hashPassword(plain) {
   if (!isValidPassword(plain)) {
-    throw new Error('Mat khau khong hop le');
+    throw new Error('Invalid password');
   }
   const salt = randomBytes(SALT_BYTES);
   const derived = await scrypt(plain, salt, HASH_BYTES, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P });
   return `${SCRYPT_PREFIX}$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$${salt.toString('base64')}$${derived.toString('base64')}`;
 }
 
-/**
- * Kiem tra mat khau thau bang hash da luu.
- * Tra ve Promise<boolean>.
- * KHONG bao loi khi hash khong hop le - tra ve false.
- */
+// Returns false (instead of throwing) for malformed hashes so callers can treat all auth failures uniformly.
 export async function verifyPassword(plain, stored) {
   if (!isValidPassword(plain) || typeof stored !== 'string') return false;
   const parts = stored.split('$');

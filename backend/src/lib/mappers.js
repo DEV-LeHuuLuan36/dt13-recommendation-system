@@ -1,7 +1,5 @@
-/**
- * Chuyen doi node/edge Neo4j thanh JSON whitelist cho response API.
- * Mac dinh khong lo passwordHash, salt, datasetTag.
- */
+// Maps Neo4j nodes/edges to whitelisted JSON for API responses. By default this
+// strips passwordHash, salt, and datasetTag — never expose them on the wire.
 
 function toIso(value) {
   if (value === null || value === undefined) return null;
@@ -49,16 +47,18 @@ export function publicProduct(props) {
   return {
     productId: p.productId,
     name: p.name,
+    brand: p.brand || null,
+    model: p.model || null,
     description: p.description,
     price: toNumber(p.price),
     imageUrl: p.imageUrl,
     active: p.active,
     createdAt: toIso(p.createdAt),
     categoryId: p.categoryId,
+    illustrationKey: p.illustrationKey || null,
   };
 }
 
-/** Product kem Category (neu co). */
 export function publicProductWithCategory(productNode, categoryNode) {
   const p = getProps(productNode);
   const c = categoryNode ? getProps(categoryNode) : null;
@@ -79,7 +79,7 @@ export function publicCategory(props) {
 
 export function publicBoughtEdge(edge, product) {
   const props = getProps(edge);
-  const out = {
+  return {
     eventId: props.eventId,
     type: 'bought',
     productId: product ? product.productId : props.productId || null,
@@ -90,7 +90,6 @@ export function publicBoughtEdge(edge, product) {
     unitPrice: toNumber(props.unitPrice),
     occurredAt: toIso(props.purchasedAt),
   };
-  return out;
 }
 
 export function publicViewedEdge(edge, product) {

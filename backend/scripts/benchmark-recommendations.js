@@ -1,12 +1,9 @@
 #!/usr/bin/env node
 /**
- * `npm run benchmark:recommendations`
- *
- * Benchmark read-only, lap lai duoc, cho cac query goi y.
- * Moi case: 3 warm-up + 15 lan do tuyen tinh, moi lan do bang performance.now().
- * Khong PROFILE, khong ghi/ghi de graph. P95 dung nearest-rank.
+ * `npm run benchmark:recommendations` — read-only, repeatable benchmark for
+ * the recommendation queries. Each case: 3 warm-up + 15 measured runs using
+ * performance.now(). P95 uses nearest-rank. No PROFILE; no graph writes.
  */
-
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

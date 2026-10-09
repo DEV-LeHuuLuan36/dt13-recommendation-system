@@ -1,10 +1,7 @@
 #!/usr/bin/env node
 /**
- * `npm run db:schema`
- *
- * Tao cac constraint uniqueness can thiet (Cypher 5.x ho tro).
- * Chay nhieu lan khong loi (IF NOT EXISTS).
- * In ra danh sach constraint sau khi tao.
+ * `npm run db:schema` — creates the uniqueness constraints required by the app.
+ * Safe to re-run (uses IF NOT EXISTS). Logs the resulting constraint list.
  */
 import neo4j from 'neo4j-driver';
 import { loadConfig } from '../src/config.js';
@@ -40,8 +37,8 @@ async function main() {
         await session.run(q);
         log(`OK: ${q.split(' ')[2]}`);
       } catch (err) {
-        // IF NOT EXISTS duoc ho tro tu Cypher 4.4+, neu server cu hon se loi.
-        // In canh bao va tiep tuc.
+        // IF NOT EXISTS requires Cypher 4.4+; older servers fail here.
+        // Log a warning and continue.
         const m = err.message.split('\n')[0];
         log(`WARN: ${m}`);
       }
@@ -49,10 +46,10 @@ async function main() {
     try {
       const res = await session.run(VERIFY.showConstraints);
       const names = res.records.map((r) => r.get('name')).filter(Boolean);
-      log(`Constraints hien co (${names.length}): ${names.join(', ')}`);
+      log(`existing constraints (${names.length}): ${names.join(', ')}`);
     } catch (err) {
       const m = err.message.split('\n')[0];
-      log(`Khong doc duoc SHOW CONSTRAINTS: ${m}`);
+      log(`Could not run SHOW CONSTRAINTS: ${m}`);
     }
   } catch (err) {
     logErr(`FAIL: ${err.message.split('\n')[0]}`);

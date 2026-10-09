@@ -1,12 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
-/**
- * Sinh ID khong va cham cho Product/Category/Customer. Dinh dang: PREFIX + uuid (khong dau gach ngang).
- * Dam bao bat dau bang chu cai va chi chua ky tu ID_REGEX ([A-Za-z0-9_-]).
- */
+// Prefix + uuid (no dashes). The prefix is restricted so generated IDs match the same regex used elsewhere.
 export function generateId(prefix) {
   if (typeof prefix !== 'string' || !/^[A-Z][A-Z0-9_]{0,8}$/.test(prefix)) {
-    throw new Error(`Prefix ID khong hop le: ${prefix}`);
+    throw new Error(`Invalid ID prefix: ${prefix}`);
   }
   const uuid = randomUUID().replace(/-/g, '');
   return `${prefix}_${uuid}`;

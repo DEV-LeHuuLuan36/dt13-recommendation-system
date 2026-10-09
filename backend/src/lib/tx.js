@@ -1,16 +1,11 @@
-/**
- * Async transaction helper. Dam bao session duoc dong trong finally, ke ca khi callback throw.
- * Tra ve gia tri tu callback.
- *
- * Vi du:
- *   const result = await runInTransaction(client, async (tx) => {
- *     await tx.run(...);
- *     return something;
- *   });
- */
+// Run `work` inside a Neo4j session and always close it. Throwing rolls back the transaction.
+// Example:
+//   await runInTransaction(client, async (tx) => {
+//     await tx.run('CREATE ...', {});
+//   });
 export async function runInTransaction(client, work, { mode = 'WRITE' } = {}) {
   if (!client || !client.driver) {
-    throw Object.assign(new Error('CSDL chua san sang'), {
+    throw Object.assign(new Error('Database is not configured'), {
       status: 503,
       code: 'NEO4J_NOT_CONFIGURED',
     });
@@ -30,12 +25,9 @@ export async function runInTransaction(client, work, { mode = 'WRITE' } = {}) {
   }
 }
 
-/**
- * read helper, dam bao session dong. Tra ve Result.
- */
 export async function runRead(client, query, params = {}) {
   if (!client) {
-    throw Object.assign(new Error('CSDL chua san sang'), {
+    throw Object.assign(new Error('Database is not configured'), {
       status: 503,
       code: 'NEO4J_NOT_CONFIGURED',
     });

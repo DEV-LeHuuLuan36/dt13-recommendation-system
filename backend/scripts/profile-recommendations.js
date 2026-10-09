@@ -1,16 +1,10 @@
 #!/usr/bin/env node
 /**
- * `npm run profile:recommendations`
- *
- * Thuc thi EXPLAIN va PROFILE cho hai query goi y chinh (user_cf va co_bought)
- * voi cac ca thuc te duoc trich tu CSDL.
- *  - EXPLAIN chi lap ke hoach, khong thuc thi.
- *  - PROFILE thuc thi va thong ke runtime.
- *  - Chi doc, khong ghi/ghi de graph, khong ghi VIEWED/BOUGHT.
- *
- * Luu JSON ra docs/performance/phase5-profile.json cung mot ban tom tat ASCII.
+ * `npm run profile:recommendations` — runs EXPLAIN and PROFILE for the main
+ * recommendation queries (user_cf and co_bought) using sample cases pulled
+ * from the live database. EXPLAIN only plans; PROFILE executes and reports
+ * runtime. Read-only — never writes or modifies the graph.
  */
-
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

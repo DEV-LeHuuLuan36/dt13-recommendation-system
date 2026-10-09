@@ -1,14 +1,8 @@
 /**
- * Integration test cho Recommendations (Phase 4):
- *  - GET /api/recommendations/me (CF user_cf).
- *  - GET /api/recommendations/products/:productId (co_bought).
- *
- * Tren Neo4j that. Dung fixture rieng voi prefix `DT13_PHASE4_<runId>` de
- * khong anh huong seed A..E. CF va co_bought chi duyet BOUGHT cua khach
- * active role=customer nen oracle tin cay duoc.
- *
- * Oracle: doc BOUGHT cua fixture, tinh `B(u)` set phan biet, `sharedCount`
- * theo MASTER_CONTEXT/RECOMMENDATION_DESIGN. Khong goi Cypher de tinh expected.
+ * Integration tests for the recommendations endpoints.
+ * Runs against a real Neo4j. Uses a per-run fixture prefix to avoid
+ * touching seed data. CF and co_bought only walk BOUGHT of active
+ * customer-role nodes, so the in-memory oracle is reliable.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -44,11 +38,15 @@ async function cleanupByPrefix(session, prefix) {
     await tx.run(
       `MATCH (c:Customer) WHERE c.customerId =~ 'CUST_[a-f0-9]{32}' DETACH DELETE c`
     );
+    // Only delete BOUGHT/VIEWED that this fixture created (prefix DT13_PHASE4_);
+    // never touch real dataset rows tagged with the canonical markers.
     await tx.run(
-      `MATCH ()-[r:BOUGHT]-() WHERE r.eventId IS NOT NULL AND NOT r.eventId STARTS WITH 'BOUGHT_DT13_SEED_V1_' DETACH DELETE r`
+      `MATCH ()-[r:BOUGHT]-() WHERE r.datasetTag STARTS WITH $prefix DETACH DELETE r`,
+      { prefix }
     );
     await tx.run(
-      `MATCH ()-[r:VIEWED]-() WHERE r.eventId IS NOT NULL AND NOT r.eventId STARTS WITH 'VIEWED_DT13_SEED_V1_' DETACH DELETE r`
+      `MATCH ()-[r:VIEWED]-() WHERE r.datasetTag STARTS WITH $prefix DETACH DELETE r`,
+      { prefix }
     );
   });
 }
@@ -77,11 +75,14 @@ async function cleanupByPrefixViaApp(neo4jClient, prefix) {
   await neo4jClient.write(
     `MATCH (c:Customer) WHERE c.customerId =~ 'CUST_[a-f0-9]{32}' DETACH DELETE c`
   );
+  // Only delete BOUGHT/VIEWED that this fixture created (prefix DT13_PHASE4_).
   await neo4jClient.write(
-    `MATCH ()-[r:BOUGHT]-() WHERE r.eventId IS NOT NULL AND NOT r.eventId STARTS WITH 'BOUGHT_DT13_SEED_V1_' DETACH DELETE r`
+    `MATCH ()-[r:BOUGHT]-() WHERE r.datasetTag STARTS WITH $prefix DETACH DELETE r`,
+    { prefix }
   );
   await neo4jClient.write(
-    `MATCH ()-[r:VIEWED]-() WHERE r.eventId IS NOT NULL AND NOT r.eventId STARTS WITH 'VIEWED_DT13_SEED_V1_' DETACH DELETE r`
+    `MATCH ()-[r:VIEWED]-() WHERE r.datasetTag STARTS WITH $prefix DETACH DELETE r`,
+    { prefix }
   );
 }
 
@@ -197,8 +198,8 @@ async function loadPeerBoughtSets(session, { prefix }) {
   for (const r of res.records) {
     const cid = r.get('cid');
     const prods = r.get('prods') || [];
-    // Filter null trong collect (do OPTIONAL MATCH)
-    out[cid] = new Set(prods.filter((p) => p));
+  // Drop nulls in the OPTIONAL MATCH collect.
+  out[cid] = new Set(prods.filter((p) => p));
   }
   return out;
 }
@@ -286,7 +287,7 @@ function computeCoBoughtFor({ sourceId, uId, peersBought, activeProducts, limit 
 test('integration: Phase 4 recommendations (CF + co_bought)', async (t) => {
   const config = loadConfig();
   if (!config.neo4jFullyConfigured) {
-    t.skip('NEO4J chua cau hinh; bo qua integration Phase 4.');
+    t.skip('NEO4J not configured; skipping Phase 4 integration tests.');
     return;
   }
 
@@ -334,15 +335,14 @@ test('integration: Phase 4 recommendations (CF + co_bought)', async (t) => {
   const PINACT = await setupFixtureProduct(session, prefix, { suffix: 'PINACT', active: false, categoryId: catA.categoryId });
   const PEMPTY = await setupFixtureProduct(session, prefix, { suffix: 'PEMPTY', active: true, categoryId: catA.categoryId });
 
-  // BOUGHT theo MASTER_CONTEXT 6.3:
+  // BOUGHT pattern (per design notes):
   //   A: P1, P2
-  //   B: P1, P2, P3 (+ mua lap P3)
+  //   B: P1, P2, P3 (+ duplicate P3)
   //   C: P1, P3, P4
   //   D: P2, P4
   //   E: (nothing)
-  // Them mua lap P3 cua B (khong nhan diem) + mua PINACT (ung vien inactive loai).
-  // PEMPTY de test source khong co ai mua -> items=[]; khong cho ai mua PEMPTY
-  // de no khong xuat hien trong goi y CF/co-bought.
+  // B also gets a duplicate P3 (no extra credit) and a PINACT purchase (filtered by active=false).
+  // PEMPTY stays unbought so co_bought against it must return 200 + empty.
   await addBought(session, { customerId: A.customerId, productId: P1.productId, prefix, eventIdSuffix: 'A_P1' });
   await addBought(session, { customerId: A.customerId, productId: P2.productId, prefix, eventIdSuffix: 'A_P2' });
   await addBought(session, { customerId: B.customerId, productId: P1.productId, prefix, eventIdSuffix: 'B_P1' });
@@ -356,7 +356,7 @@ test('integration: Phase 4 recommendations (CF + co_bought)', async (t) => {
   await addBought(session, { customerId: D.customerId, productId: P4.productId, prefix, eventIdSuffix: 'D_P4' });
   // Them mua PINACT cua B -> loai vi PINACT inactive.
   await addBought(session, { customerId: B.customerId, productId: PINACT.productId, prefix, eventIdSuffix: 'B_PINACT' });
-  // Inactive peer (inactivePeer) mua P4 -> khong dong gop (bi inactive).
+  // Inactive peer (inactivePeer) buys P4 -> should not count (inactive).
   await addBought(session, { customerId: inactivePeer.customerId, productId: P4.productId, prefix, eventIdSuffix: 'INACT_P4' });
   await addBought(session, { customerId: inactivePeer.customerId, productId: P1.productId, prefix, eventIdSuffix: 'INACT_P1' });
 
@@ -367,7 +367,7 @@ test('integration: Phase 4 recommendations (CF + co_bought)', async (t) => {
 
   /* ------------------------------ Auth & perms --------------------------- */
 
-  // agentA phuc vu cac goi recommendation cua A.
+  // agentA handles recommendation calls for A.
   let agentA = null;
   await t.test('A login OK', async () => {
     agentA = request.agent(app);
@@ -381,7 +381,7 @@ test('integration: Phase 4 recommendations (CF + co_bought)', async (t) => {
     assert.equal(r.status, 401);
   });
 
-  await t.test('admin khong the goi /api/recommendations/* (403 CUSTOMER_REQUIRED)', async () => {
+  await t.test('admin cannot call /api/recommendations/* (403 CUSTOMER_REQUIRED)', async () => {
     const adminAgent = request.agent(app);
     const login = await adminAgent.post('/api/auth/login').send({
       email: adminX.email,
@@ -398,9 +398,9 @@ test('integration: Phase 4 recommendations (CF + co_bought)', async (t) => {
     assert.equal(r2.body.error.code, 'CUSTOMER_REQUIRED');
   });
 
-  await t.test('customer inactive bi chan boi requireAuth (403 ACCOUNT_INACTIVE)', async () => {
-    // Su dung mot agent rieng: neu A bi demote, requireAuth se destroy session agent nay,
-    // khong anh huong agentA dang dung cho cac test tiep theo.
+  await t.test('inactive customer is blocked by requireAuth (403 ACCOUNT_INACTIVE)', async () => {
+    // Use a dedicated agent: if A gets demoted, requireAuth will destroy
+    // *its* session without affecting agentA used in later tests.
     const isolatedAgent = request.agent(app);
     const login = await isolatedAgent.post('/api/auth/login').send({ email: A.email, password: A.password });
     assert.equal(login.status, 200);
@@ -419,12 +419,12 @@ test('integration: Phase 4 recommendations (CF + co_bought)', async (t) => {
     }
   });
 
-  await t.test('limit khong hop le (0/-1/abc/1.5/21/empty) -> 400', async () => {
+  await t.test('invalid limit (0/-1/abc/1.5/21/empty) -> 400 (empty is allowed, default 5)', async () => {
     const cases = ['0', '-1', 'abc', '1.5', '21', ''];
     for (const l of cases) {
       const r = await agentA.get(`/api/recommendations/me?limit=${encodeURIComponent(l)}`);
       if (l === '') {
-        // empty -> default 5 (khong phai 400)
+        // empty -> default 5 (not 400)
         assert.ok(r.status === 200, `limit='' expected 200 got ${r.status}`);
       } else {
         assert.equal(r.status, 400, `limit=${l} expected 400 got ${r.status}: ${JSON.stringify(r.body)}`);
@@ -433,7 +433,7 @@ test('integration: Phase 4 recommendations (CF + co_bought)', async (t) => {
     }
   });
 
-  await t.test('limit=1 chi tra 1 item, score cao nhat', async () => {
+  await t.test('limit=1 returns a single item with the highest score', async () => {
     const r = await agentA.get('/api/recommendations/me?limit=1');
     assert.equal(r.status, 200);
     assert.equal(r.body.method, 'user_cf');
@@ -446,7 +446,7 @@ test('integration: Phase 4 recommendations (CF + co_bought)', async (t) => {
 
   /* ------------------------- CF baseline / oracle ----------------------- */
 
-  await t.test('CF baseline: A nhan P3(3,2) truoc, P4(2,2) sau', async () => {
+  await t.test('CF baseline: A gets P3(3,2) first, then P4(2,2)', async () => {
     const r = await agentA.get('/api/recommendations/me?limit=5');
     assert.equal(r.status, 200);
     assert.equal(r.body.method, 'user_cf');
@@ -470,7 +470,7 @@ test('integration: Phase 4 recommendations (CF + co_bought)', async (t) => {
       assert.ok(typeof it.reason === 'string' && it.reason.length > 0);
     }
 
-    // Cu the: P3 score=3 support=2, P4 score=2 support=2.
+    // Concretely: P3 score=3 support=2, P4 score=2 support=2.
     assert.equal(r.body.items[0].productId, P3.productId);
     assert.equal(r.body.items[0].score, 3);
     assert.equal(r.body.items[0].support, 2);
@@ -478,26 +478,26 @@ test('integration: Phase 4 recommendations (CF + co_bought)', async (t) => {
     assert.equal(r.body.items[1].score, 2);
     assert.equal(r.body.items[1].support, 2);
 
-    // PINACT (inactive) khong xuat hien; PEMPTY khong co peer mua.
+    // PINACT (inactive) and PEMPTY (no peer purchase) must not appear.
     for (const it of r.body.items) {
       assert.notEqual(it.productId, PINACT.productId);
       assert.notEqual(it.productId, PEMPTY.productId);
     }
   });
 
-  await t.test('Mua lap P3 cua B khong lam tang score/support', async () => {
-    // Dam bao: so peer cho P3 van la 2 (B, C), score van la 3.
+  await t.test("Duplicate P3 purchase by B does not inflate A's score/support", async () => {
+    // Peer count for P3 must remain 2 (B, C) and score must stay 3.
     const r = await agentA.get('/api/recommendations/me?limit=5');
     assert.equal(r.status, 200);
     const p3 = r.body.items.find((x) => x.productId === P3.productId);
-    assert.ok(p3, 'P3 phai xuat hien');
+    assert.ok(p3, 'P3 must be present');
     assert.equal(p3.score, 3);
     assert.equal(p3.support, 2);
   });
 
   /* ----------------------- Co-bought oracle (A xem P4) ------------------ */
 
-  await t.test('Co-bought: A xem P4 (chua mua P4) nhan P3(1,1)', async () => {
+  await t.test('Co-bought: A views P4 (not yet bought) gets P3(1,1)', async () => {
     const r = await agentA.get(`/api/recommendations/products/${P4.productId}?limit=5`);
     assert.equal(r.status, 200);
     assert.equal(r.body.method, 'co_bought');
@@ -516,28 +516,29 @@ test('integration: Phase 4 recommendations (CF + co_bought)', async (t) => {
       assert.equal(r.body.items[i].score, expected[i].score);
       assert.equal(r.body.items[i].support, expected[i].support);
     }
-    // A da mua P1/P2, source P4 -> loai ca ba -> chi con P3 (tu C va D).
+    // A already bought P1/P2, source is P4 -> all three are filtered out,
+    // leaving only P3 (from C and D).
     assert.equal(r.body.items.length, 1);
     assert.equal(r.body.items[0].productId, P3.productId);
     assert.equal(r.body.items[0].score, 1);
     assert.equal(r.body.items[0].support, 1);
   });
 
-  await t.test('Co-bought: source ton tai nhung chua co mua cung -> items=[] (200)', async () => {
-    // PEMPTY: khong ai mua -> khong co peer -> 200 rong.
+  await t.test('Co-bought: source exists but no co-purchase -> items=[] (200)', async () => {
+    // PEMPTY has no peer purchases -> 200 with empty list.
     const r = await agentA.get(`/api/recommendations/products/${PEMPTY.productId}?limit=5`);
     assert.equal(r.status, 200);
     assert.equal(r.body.method, 'co_bought');
     assert.equal(r.body.items.length, 0);
   });
 
-  await t.test('Co-bought: source khong ton tai -> 404', async () => {
+  await t.test('Co-bought: source product not found -> 404', async () => {
     const r = await agentA.get('/api/recommendations/products/DOES_NOT_EXIST');
     assert.equal(r.status, 404);
     assert.equal(r.body.error.code, 'PRODUCT_NOT_FOUND');
   });
 
-  await t.test('Co-bought: source inactive -> 404', async () => {
+  await t.test('Co-bought: source product is inactive -> 404', async () => {
     const r = await agentA.get(`/api/recommendations/products/${PINACT.productId}`);
     assert.equal(r.status, 404);
     assert.equal(r.body.error.code, 'PRODUCT_NOT_FOUND');
@@ -545,7 +546,7 @@ test('integration: Phase 4 recommendations (CF + co_bought)', async (t) => {
 
   /* ------------------ Mua moi -> CF cap nhat (P3 loai) ----------------- */
 
-  await t.test('Sau A mua P3 qua API Phase 3: P3 bien mat, P4 tro thanh (3,2)', async () => {
+  await t.test('After A buys P3 via Phase 3 API: P3 disappears and P4 becomes (3,2)', async () => {
     const eventId = `${prefix}_BOUGHT_AFTER_VIEW`;
     const res = await agentA.post('/api/interactions/purchases').send({
       eventId,
@@ -554,7 +555,7 @@ test('integration: Phase 4 recommendations (CF + co_bought)', async (t) => {
     });
     assert.equal(res.status, 201, JSON.stringify(res.body));
 
-    // Cap nhat oracle local
+    // Refresh local oracle after the API write.
     uABought.add(P3.productId);
     peersBought[A.customerId] = uABought;
     const expected = computeCfForUser(A.customerId, peersBought, uABought, activeProducts, 5);
@@ -562,29 +563,27 @@ test('integration: Phase 4 recommendations (CF + co_bought)', async (t) => {
     const r = await agentA.get('/api/recommendations/me?limit=5');
     assert.equal(r.status, 200);
     assert.equal(r.body.items.length, expected.length);
-    // P3 khong con xuat hien
+    // P3 must be gone
     const ids = r.body.items.map((x) => x.productId);
-    assert.ok(!ids.includes(P3.productId), 'P3 phai bien mat sau khi A mua');
-    // P4 co score = 3 (C shared P1/P3, D shared P2) support = 2 (C, D)
+    assert.ok(!ids.includes(P3.productId), 'P3 must disappear after A buys it');
+    // P4 score=3 (C shares P1/P3, D shares P2) support=2 (C, D)
     const p4 = r.body.items.find((x) => x.productId === P4.productId);
-    assert.ok(p4, 'P4 phai ton tai');
+    assert.ok(p4, 'P4 must be present');
     assert.equal(p4.score, 3);
     assert.equal(p4.support, 2);
   });
 
-  await t.test('Sau A mua P3: P3 bo ra khoi ung vien source P4 co-bought', async () => {
+  await t.test('After A buys P3: P3 is also removed as a co-bought candidate for source P4', async () => {
     const r = await agentA.get(`/api/recommendations/products/${P4.productId}?limit=5`);
     assert.equal(r.status, 200);
     const ids = r.body.items.map((x) => x.productId);
-    assert.ok(!ids.includes(P3.productId), 'P3 da mua nen bi loai');
-    assert.equal(r.body.items.length, 0, 'A da mua P1, P2, P3, va xem P4 -> khong con ung vien');
+    assert.ok(!ids.includes(P3.productId), 'P3 was just bought, must be filtered out');
+    assert.equal(r.body.items.length, 0, 'A bought P1, P2, P3 and viewed P4 -> no remaining candidates');
   });
-
-  /* --------------------------- VIEWED doc ------------------------------ */
 
   let viewCountsBefore = 0;
   let viewCountsAfter = 0;
-  await t.test('Ghi VIEWED moi khong doi CF (read-only)', async () => {
+  await t.test('Writing new VIEWED does not change CF (read-only)', async () => {
     viewCountsBefore = Number((await session.executeRead(async (tx) => tx.run(
       `MATCH ()-[r:VIEWED]->() WHERE r.eventId STARTS WITH 'VIEWED_DT13_PHASE4_' RETURN count(r) AS n`
     ))).records[0].get('n'));
@@ -601,12 +600,12 @@ test('integration: Phase 4 recommendations (CF + co_bought)', async (t) => {
       assert.equal(r1.body.items[i].score, r2.body.items[i].score);
       assert.equal(r1.body.items[i].support, r2.body.items[i].support);
     }
-    assert.ok(viewCountsAfter > viewCountsBefore, 'VIEWED phai tang');
+    assert.ok(viewCountsAfter > viewCountsBefore, 'VIEWED count must increase');
   });
 
   /* ----------------------- Empty / role / active ----------------------- */
 
-  await t.test('E chua mua: CF tra shape rong dung', async () => {
+  await t.test('E has no purchases: CF returns the empty shape', async () => {
     const agentE = request.agent(app);
     await agentE.post('/api/auth/login').send({ email: E.email, password: E.password });
     const r = await agentE.get('/api/recommendations/me?limit=5');
@@ -616,7 +615,7 @@ test('integration: Phase 4 recommendations (CF + co_bought)', async (t) => {
     assert.ok(typeof r.body.reason === 'string' && r.body.reason.length > 0);
   });
 
-  await t.test('Snapshot BOUGHT/VIEWED toan graph khong doi sau recommendation', async () => {
+  await t.test('BOUGHT/VIEWED snapshot is unchanged after recommendation calls', async () => {
     const before = await session.executeRead(async (tx) => tx.run(
       `MATCH (c:Customer)-[r:BOUGHT]->() WHERE r.eventId STARTS WITH 'BOUGHT_DT13_PHASE4_' RETURN count(r) AS n`
     ));
@@ -631,7 +630,7 @@ test('integration: Phase 4 recommendations (CF + co_bought)', async (t) => {
 
   /* ----------------------- Sorting deterministic ----------------------- */
 
-  await t.test('Sort: score bang nhau -> support quyet dinh; cung score/support -> productId ASC', async () => {
+  await t.test('Sort: equal score -> support decides; equal score+support -> productId ASC', async () => {
     // A sau khi mua P3, con P4 (3,2) la item duy nhat. Tao them 1 fixture de test sort.
     // Them peer Mua P5 va P6 sao cho cung score=1 support=1.
     // Tao them P5 (chi D mua) va P6 (chi B mua). Sau khi cap nhat BOUGHT cua B mua P6
@@ -675,7 +674,7 @@ test('integration: Phase 4 recommendations (CF + co_bought)', async (t) => {
 
   /* ----------------------------- Cleanup sanity ------------------------ */
 
-  await t.test('cleanup: so bought/viewed cua fixture tra ve 0 sau t.after', async () => {
+  await t.test('cleanup: bought/viewed counts return to 0 after t.after', async () => {
     // Chi kiem tra prefix danh dau; khong assert 0 o day do cleanup o t.after.
     const before = Number((await session.executeRead(async (tx) => tx.run(
       `MATCH ()-[r:BOUGHT]->() WHERE r.eventId STARTS WITH 'BOUGHT_DT13_PHASE4_' RETURN count(r) AS n`

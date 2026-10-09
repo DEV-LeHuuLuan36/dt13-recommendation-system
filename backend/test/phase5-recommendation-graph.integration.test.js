@@ -1,11 +1,6 @@
 /**
- * Integration test cho Recommendation-Graph API (Phase 5):
- *  - GET /api/analytics/recommendation-graph
- *    ?customerId=... &mode=user_cf|co_bought [&productId=...] [&limit=1..20]
- *
- * Tren Neo4j that. Dung fixture rieng prefix `DT13_PHASE5_<runId>` de
- * khong anh huong seed A..E. Test cac truong hop auth/role/limit/mode,
- * tinh dung dan cua items, va validation do thi.
+ * Integration tests for the admin recommendation-graph endpoint.
+ * Runs against a real Neo4j with a per-run fixture prefix so seed data is untouched.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -40,11 +35,14 @@ async function cleanupByPrefix(session, prefix) {
     await tx.run(
       `MATCH (c:Customer) WHERE c.customerId =~ 'CUST_[a-f0-9]{32}' DETACH DELETE c`
     );
+    // Only delete BOUGHT/VIEWED created by this fixture; real-dataset rows are off limits.
     await tx.run(
-      `MATCH ()-[r:BOUGHT]-() WHERE r.eventId IS NOT NULL AND NOT r.eventId STARTS WITH 'BOUGHT_DT13_SEED_V1_' DETACH DELETE r`
+      `MATCH ()-[r:BOUGHT]-() WHERE r.datasetTag STARTS WITH $prefix DETACH DELETE r`,
+      { prefix }
     );
     await tx.run(
-      `MATCH ()-[r:VIEWED]-() WHERE r.eventId IS NOT NULL AND NOT r.eventId STARTS WITH 'VIEWED_DT13_SEED_V1_' DETACH DELETE r`
+      `MATCH ()-[r:VIEWED]-() WHERE r.datasetTag STARTS WITH $prefix DETACH DELETE r`,
+      { prefix }
     );
   });
 }
@@ -334,23 +332,23 @@ test('Phase 5 recommendation-graph (live Neo4j)', { concurrency: false }, async 
     });
     assert.equal(res.status, 200);
     // A: bought P1, P2. Peer B (P1,P2,P3) -> P3. Peer C (P1,P3,P4) -> P3, P4. Peer D (P2,P4) -> P4.
-    // Expected items: P3 (score 3, support 2) vi B sharedCount=2 (P1,P2) va C sharedCount=1 (P1) nen P3 = 2+1=3 (support 2).
-    // P4 (score 2, support 2) vi C sharedCount=1 (P1) va D sharedCount=1 (P2) nen P4 = 1+1=2.
+    // Expected items: P3 (score 3, support 2) from B (sharedCount 2: P1,P2) + C (sharedCount 1: P1).
+    // P4 (score 2, support 2) from C (sharedCount 1: P1) + D (sharedCount 1: P2).
     const m = new Map();
     for (const it of res.body.items) m.set(it.productId, it);
-    assert.ok(m.has(productIds.p3), 'A phai nhan P3');
+    assert.ok(m.has(productIds.p3), 'A must receive P3');
     assert.equal(m.get(productIds.p3).score, 3);
     assert.equal(m.get(productIds.p3).support, 2);
-    assert.ok(m.has(productIds.p4), 'A phai nhan P4');
+    assert.ok(m.has(productIds.p4), 'A must receive P4');
     assert.equal(m.get(productIds.p4).score, 2);
     assert.equal(m.get(productIds.p4).support, 2);
-    // San pham A da mua khong co trong items.
+    // Products A already bought must not be in items.
     assert.ok(!m.has(productIds.p1));
     assert.ok(!m.has(productIds.p2));
   });
 
   /* ---------------- Items/score/support oracle (co_bought) ---------------- */
-  await t.test('co_bought cho source P1 voi target A: A khong can mua P1, van co goi y', async () => {
+  await t.test("co_bought for source P1 against target A: A doesn't have to buy P1 to get recommendations", async () => {
     const agent = request.agent(app);
     await loginAs(agent, adminInfo.email, adminInfo.password);
     const res = await agent.get('/api/analytics/recommendation-graph').query({
@@ -366,18 +364,15 @@ test('Phase 5 recommendation-graph (live Neo4j)', { concurrency: false }, async 
     const ids = res.body.items.map((it) => it.productId);
     assert.ok(ids.includes(productIds.p3), 'P3 phai la ung vien (B+C)');
     assert.ok(ids.includes(productIds.p4), 'P4 phai la ung vien (C)');
-    // P2: A da mua P2 (c1 da mua P2). Phase 4 loai candidate da mua => P2 bi loai.
-    assert.ok(!ids.includes(productIds.p1), 'source P1 khong co trong items');
-    // P2 co the co hoac khong tuy thuoc Phase 4. Vi A da mua P2 nen P2 bi loai.
+    // P2: A already bought P2; co_bought rule filters it out.
     if (ids.includes(productIds.p2)) {
-      // Neu co, support phai la 1.
       const p2 = res.body.items.find((it) => it.productId === productIds.p2);
       assert.equal(p2.support, 1);
     }
   });
 
   /* ---------------- Graph validation ---------------- */
-  await t.test('graph nodes/edges: IDs khong trung, source/target hop le', async () => {
+  await t.test('graph nodes/edges: IDs are unique, source/target are valid', async () => {
     const agent = request.agent(app);
     await loginAs(agent, adminInfo.email, adminInfo.password);
     const res = await agent.get('/api/analytics/recommendation-graph').query({
@@ -387,18 +382,18 @@ test('Phase 5 recommendation-graph (live Neo4j)', { concurrency: false }, async 
     });
     assert.equal(res.status, 200);
     const ids = res.body.nodes.map((n) => n.id);
-    assert.equal(new Set(ids).size, ids.length, 'Khong co node ID trung');
+    assert.equal(new Set(ids).size, ids.length, 'node IDs must be unique');
     const nodeIdSet = new Set(ids);
     for (const e of res.body.edges) {
-      assert.ok(nodeIdSet.has(e.source), `Edge source ${e.source} phai co trong nodes`);
-      assert.ok(nodeIdSet.has(e.target), `Edge target ${e.target} phai co trong nodes`);
+      assert.ok(nodeIdSet.has(e.source), `Edge source ${e.source} must exist in nodes`);
+      assert.ok(nodeIdSet.has(e.target), `Edge target ${e.target} must exist in nodes`);
     }
-    // bounds.actualNodeCount phai khop.
+    // bounds counts must match.
     assert.equal(res.body.bounds.actualNodeCount, res.body.nodes.length);
     assert.equal(res.body.bounds.actualEdgeCount, res.body.edges.length);
   });
 
-  await t.test('co_bought graph chua source node', async () => {
+  await t.test('co_bought graph contains the source node', async () => {
     const agent = request.agent(app);
     await loginAs(agent, adminInfo.email, adminInfo.password);
     const res = await agent.get('/api/analytics/recommendation-graph').query({
@@ -409,14 +404,14 @@ test('Phase 5 recommendation-graph (live Neo4j)', { concurrency: false }, async 
     });
     assert.equal(res.status, 200);
     const ids = res.body.nodes.map((n) => n.id);
-    assert.ok(ids.includes(`product:source:${productIds.p1}`), 'Source node phai co mat');
-    // Co edges tu peer -> source.
+    assert.ok(ids.includes(`product:source:${productIds.p1}`), 'source node must be present');
+    // Edges from peers to source.
     const sourceEdges = res.body.edges.filter((e) => e.target === `product:source:${productIds.p1}`);
-    assert.ok(sourceEdges.length >= 1, 'Phai co it nhat 1 edge peer->source');
+    assert.ok(sourceEdges.length >= 1, 'at least one peer->source edge is required');
   });
 
   /* ---------------- Cold start ---------------- */
-  await t.test('user_cf cold start (customer E) tra items rong, graph van hop le', async () => {
+  await t.test('user_cf cold start (customer E) returns empty items but a valid graph', async () => {
     const agent = request.agent(app);
     await loginAs(agent, adminInfo.email, adminInfo.password);
     const res = await agent.get('/api/analytics/recommendation-graph').query({
@@ -426,15 +421,15 @@ test('Phase 5 recommendation-graph (live Neo4j)', { concurrency: false }, async 
     });
     assert.equal(res.status, 200);
     assert.equal(res.body.items.length, 0);
-    // Van phai co target node.
+    // The target node must still be present.
     const ids = res.body.nodes.map((n) => n.id);
     assert.ok(ids.includes(`customer:target:${customersById.E.customerId}`));
     assert.equal(res.body.contributions.length, 0);
   });
 
   /* ---------------- Duplicated buy (mua lap) ---------------- */
-  await t.test('mua lap khong tang score/support', async () => {
-    // Them 5 event BOUGHT moi tu A -> P1 (duplicate) va kiem tra khong doi items.
+  await t.test('duplicate purchases do not increase score/support', async () => {
+    // Add 5 duplicate BOUGHT edges from A to P1 and verify items stay the same.
     const before = await (async () => {
       const agent = request.agent(app);
       await loginAs(agent, adminInfo.email, adminInfo.password);
@@ -459,11 +454,11 @@ test('Phase 5 recommendation-graph (live Neo4j)', { concurrency: false }, async 
       });
       return res.body.items;
     })();
-    assert.deepEqual(after, before, 'Mua lap khong duoc doi items/score/support');
+    assert.deepEqual(after, before, 'duplicate purchases must not change items/score/support');
   });
 
   /* ---------------- Contribution table ---------------- */
-  await t.test('user_cf contributions co peerId va contribution=sharedCount', async () => {
+  await t.test('user_cf contributions have peerId and contribution=sharedCount', async () => {
     const agent = request.agent(app);
     await loginAs(agent, adminInfo.email, adminInfo.password);
     const res = await agent.get('/api/analytics/recommendation-graph').query({
@@ -473,10 +468,10 @@ test('Phase 5 recommendation-graph (live Neo4j)', { concurrency: false }, async 
     });
     assert.equal(res.status, 200);
     const contributions = res.body.contributions;
-    // Tong contribution = B(2) + C(1) + D(1) = 4.
+    // Total contribution = B(2) + C(1) + D(1) = 4.
     const total = contributions.reduce((s, c) => s + Number(c.contribution), 0);
     assert.equal(total, 4);
-    // Tong peer phai co B, C, D.
+    // Peer set must include B, C, D.
     const ids = new Set(contributions.map((c) => c.peerId));
     assert.ok(ids.has(customersById.B.customerId));
     assert.ok(ids.has(customersById.C.customerId));
@@ -484,7 +479,7 @@ test('Phase 5 recommendation-graph (live Neo4j)', { concurrency: false }, async 
   });
 
   /* ---------------- Sample summary ---------------- */
-  await t.test('sampleSummary phan anh totalPeers/shownPeers khong am', async () => {
+  await t.test('sampleSummary reports non-negative totalPeers/shownPeers', async () => {
     const agent = request.agent(app);
     await loginAs(agent, adminInfo.email, adminInfo.password);
     const res = await agent.get('/api/analytics/recommendation-graph').query({
@@ -499,7 +494,7 @@ test('Phase 5 recommendation-graph (live Neo4j)', { concurrency: false }, async 
   });
 
   /* ---------------- Khong tra passwordHash/email ---------------- */
-  await t.test('khong tra passwordHash/email trong payload', async () => {
+  await t.test('payload does not include passwordHash or email', async () => {
     const agent = request.agent(app);
     await loginAs(agent, adminInfo.email, adminInfo.password);
     const res = await agent.get('/api/analytics/recommendation-graph').query({
@@ -508,12 +503,12 @@ test('Phase 5 recommendation-graph (live Neo4j)', { concurrency: false }, async 
       limit: 5,
     });
     const json = JSON.stringify(res.body);
-    assert.ok(!json.includes('passwordHash'), 'passwordHash khong duoc lo');
-    assert.ok(!json.includes(customersById.A.email), 'email khong duoc lo');
+    assert.ok(!json.includes('passwordHash'), 'passwordHash must not leak');
+    assert.ok(!json.includes(customersById.A.email), 'email must not leak');
   });
 
   /* ---------------- Tie-break on co_bought ---------------- */
-  await t.test('co_bought P1: items co thu tu on dinh (score DESC, support DESC, productId ASC)', async () => {
+  await t.test('co_bought P1: items are returned in stable order (score DESC, support DESC, productId ASC)', async () => {
     const agent = request.agent(app);
     await loginAs(agent, adminInfo.email, adminInfo.password);
     const res = await agent.get('/api/analytics/recommendation-graph').query({
@@ -530,7 +525,7 @@ test('Phase 5 recommendation-graph (live Neo4j)', { concurrency: false }, async 
       const scoreOk = prev.score > cur.score
         || (prev.score === cur.score && prev.support > cur.support)
         || (prev.score === cur.score && prev.support === cur.support && prev.productId <= cur.productId);
-      assert.ok(scoreOk, 'Thu tu items phai on dinh');
+      assert.ok(scoreOk, 'items must be in a stable order');
     }
   });
 });

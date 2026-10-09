@@ -1,11 +1,7 @@
 /**
- * Integration test cho `runSeedInTransaction` (loader).
- *
- * Ket noi Neo4j that (qua `loadConfig()`), sinh 1 dataset nho voi ID va
- * datasetTag rieng (`DT13_TEST_<runId>`), chay 1 lan thanh cong, 1 lan
- * gay loi o buoc thu 3 (customers), verify rollback, cleanup.
- *
- * Khong dung du lieu seed that (PROD_001, CUST_001, ...).
+ * Integration tests for the seed loader's transaction rollback.
+ * Connects to a real Neo4j, writes a small fixture with its own datasetTag,
+ * verifies a forced mid-run failure rolls everything back, then cleans up.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -40,13 +36,11 @@ function buildFixtureDataset(runId) {
 }
 
 async function cleanupByMarker(session, marker) {
-  // Xoa toan bo node/edge thuoc fixture (theo datasetTag hoac ID prefix).
-  // Dung vi nhieu buoc lien quan.
+  // Remove every node/edge belonging to the fixture (matched by datasetTag or ID prefix).
   await session.executeWrite(async (tx) => {
     await tx.run(`MATCH (n) WHERE n.datasetTag = $marker DETACH DELETE n`, { marker });
   });
-  // Dam bao cung cap nhat BOUGHT/VIEWED khong co datasetTag (do dataset nho cua ta co):
-  // (CAC node thuoc fixture co datasetTag = marker; cac edge cung co.)
+  // Note: BOUGHT/VIEWED edges from this fixture also carry datasetTag = marker.
 }
 
 async function countByMarker(session, marker) {
@@ -57,10 +51,10 @@ async function countByMarker(session, marker) {
   return Number(res.records[0]?.get('n') || 0);
 }
 
-test('integration: seed transaction hoan tat va ghi tat ca records', async (t) => {
+test('integration: seed transaction completes and writes all records', async (t) => {
   const config = loadConfig();
   if (!config.neo4jFullyConfigured) {
-    t.skip('NEO4J khong cau hinh; bo qua integration test.');
+    t.skip('NEO4J not configured; skipping integration test.');
     return;
   }
   const runId = randomBytes(4).toString('hex');
@@ -76,10 +70,10 @@ test('integration: seed transaction hoan tat va ghi tat ca records', async (t) =
     const adminHash = await hashPassword('admin-fixture-001');
     const customerHash = await hashPassword('cust-fixture-001');
 
-    // Dam bao sach truoc
+    // Start from a clean slate.
     await cleanupByMarker(session, marker);
 
-    await t.test('chay thanh cong', async () => {
+    await t.test('runs successfully', async () => {
       const totals = await runSeedInTransaction(session, ds, adminHash, customerHash);
       assert.equal(totals.categories, 1);
       assert.equal(totals.products, 2);
@@ -92,15 +86,15 @@ test('integration: seed transaction hoan tat va ghi tat ca records', async (t) =
       assert.equal(c, 5);
     });
 
-    await t.test('chay lai idempotent (merge)', async () => {
+    await t.test('re-running is idempotent (merge)', async () => {
       const totals = await runSeedInTransaction(session, ds, adminHash, customerHash);
       assert.equal(totals.products, 2);
       const c = await countByMarker(session, marker);
       assert.equal(c, 5);
     });
 
-    await t.test('rollback khi fail o buoc customers', async () => {
-      // Tao dataset khac de kiem rollback
+    await t.test('rollback when customers step fails', async () => {
+      // Build a separate dataset to verify rollback.
       const runId2 = randomBytes(4).toString('hex');
       const marker2 = `DT13_TEST_${runId2}`;
       const ds2 = buildFixtureDataset(runId2);
@@ -110,12 +104,12 @@ test('integration: seed transaction hoan tat va ghi tat ca records', async (t) =
         runSeedInTransaction(session, ds2, adminHash, customerHash, { failAtStep: 'customers' }),
         /TEST_FAIL_AT_customers/
       );
-      // Sau rollback, khong co node/edge nao thuoc marker2
+      // After rollback no node/edge for marker2 should remain.
       const c = await countByMarker(session, marker2);
-      assert.equal(c, 0, `Sau rollback phai clean nhung con ${c}`);
+      assert.equal(c, 0, `After rollback should be clean but ${c} remain`);
     });
 
-    await t.test('rollback khi fail o buoc bought (sau khi da ghi BOUGHT) cung rollback toan bo', async () => {
+    await t.test('rollback at the bought step (after BOUGHT write) wipes everything', async () => {
       const runId3 = randomBytes(4).toString('hex');
       const marker3 = `DT13_TEST_${runId3}`;
       const ds3 = buildFixtureDataset(runId3);
@@ -126,10 +120,10 @@ test('integration: seed transaction hoan tat va ghi tat ca records', async (t) =
         /TEST_FAIL_AT_bought/
       );
       const c = await countByMarker(session, marker3);
-      assert.equal(c, 0, `Sau rollback o bought, toan bo phai clean nhung con ${c}`);
+      assert.equal(c, 0, `After rollback at bought, everything must be clean but ${c} remain`);
     });
   } finally {
-    // Cleanup tat ca fixture con sot theo prefix DT13_TEST_
+    // Final cleanup: anything still tagged with the test prefix.
     await session.executeWrite(async (tx) => {
       await tx.run(`MATCH (n) WHERE n.datasetTag STARTS WITH 'DT13_TEST_' DETACH DELETE n`);
     });

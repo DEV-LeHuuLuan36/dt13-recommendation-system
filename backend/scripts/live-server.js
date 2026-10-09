@@ -1,12 +1,8 @@
 #!/usr/bin/env node
 /**
- * `node scripts/live-server.js`
- *
- * Server backend chay LIVE voi in-memory adapter (khong can Neo4j that).
- * Dung de kiem tra session/cookie/proxy HTTP voi frontend that.
- *
- * KHONG dung cho production - chi de smoke test trong Giai doan 2 khi
- * instance Neo4j chua san sang.
+ * Local backend with an in-memory adapter (no real Neo4j needed).
+ * Useful for smoke-testing the session/cookie/proxy flow against the real frontend.
+ * Do NOT use in production.
  */
 import { createApp } from '../src/app.js';
 import { hashPassword } from '../src/password.js';

@@ -10,23 +10,18 @@ import {
 } from '../lib/validate.js';
 import { toNumber } from '../lib/mappers.js';
 
-/**
- * Admin recommendation-graph API (Giai doan 5):
- *   GET /api/analytics/recommendation-graph
- *     ?customerId=<id> (required)
- *     &mode=user_cf|co_bought
- *     &productId=<id> (required khi co_bought)
- *     &limit=1..20 (default 5)
- *
- * Tra ve { method, targetCustomerId, sourceProductId, items, nodes, edges, isPartial, bounds, reason }.
- * Tra cac thanh phan minh hoa: top K (toan bo du lieu), peers, candidates, contributions.
- * Co bounds (maxNodes, maxEdges, maxPeers) de gioi han kich thuoc graph.
- */
+// Admin recommendation-graph endpoint:
+//   GET /api/analytics/recommendation-graph
+//     ?customerId=<id>   required
+//     &mode=user_cf|co_bought
+//     &productId=<id>    required when mode=co_bought
+//     &limit=1..20       default 5
+// Returns items (top-K, computed against the full graph) plus a bounded
+// illustrative subgraph for visualization.
 
 const DEFAULT_LIMIT = 5;
 const MIN_LIMIT = 1;
 const MAX_LIMIT = 20;
-
 const DEFAULT_MAX_NODES = 60;
 const DEFAULT_MAX_EDGES = 120;
 const DEFAULT_MAX_PEERS = 12;
@@ -68,10 +63,6 @@ function makeNodeId(type, id) {
   return `${type}:${id}`;
 }
 
-/**
- * Tinh toan items qua recommendForMe/recommendForProduct nhu API khach (read-only).
- * Dam bao cung semantics voi Phase 4.
- */
 function mapItem(r) {
   return {
     productId: r.get('productId'),
@@ -92,10 +83,6 @@ async function fetchItems(neo4jClient, { mode, productId, customerId, limit }) {
   return (result.records || []).map(mapItem);
 }
 
-/**
- * Dung cx.run truc tiep qua client de xuat partition de thu thap peer va candidate
- * theo bound. Neu wrapper read khong co, chung ta tao session rieng.
- */
 async function fetchPeerCandidates(neo4jClient, { mode, productId, customerId, maxRows }) {
   if (mode === 'user_cf') {
     const peerRes = await runRead(neo4jClient, QUERIES.cfPeers, {
@@ -224,7 +211,6 @@ export function createRecommendationGraphRouter({ neo4jClient }) {
       const limit = parseLimit(req.query.limit);
       const productId = mode === 'co_bought' ? validateId(req.query.productId, 'productId') : null;
 
-      // Kiem tra target customer.
       const targetRes = await runRead(neo4jClient, QUERIES.findTargetCustomer, { customerId });
       if (!targetRes.records[0]) {
         throw new NotFoundError('Khach hang khong ton tai.', 'CUSTOMER_NOT_FOUND');
@@ -261,7 +247,6 @@ export function createRecommendationGraphRouter({ neo4jClient }) {
         maxRows: bounds.maxEdges,
       });
 
-      // Lay product info cho items, source (neu co), candidates.
       const productIds = new Set();
       for (const it of items) productIds.add(it.productId);
       if (productId) productIds.add(productId);
@@ -269,18 +254,10 @@ export function createRecommendationGraphRouter({ neo4jClient }) {
       const productMap = await fetchProductsByIds(neo4jClient, [...productIds]);
       const categoryMap = await fetchCategoriesByProductIds(neo4jClient, [...productIds]);
 
-      // Thiet ke graph nodes/edges co gioi han.
-      // Nodes:
-      //  - customer:target (alias "Khach dang phan tich")
-      //  - customer:peer (alias "Nguoi mua N")
-      //  - product:source (neu co_bought)
-      //  - product:item (ung vien trong items)
-      //  - product:peer-shared (san pham chung B(u) ∩ B(peer)) [co the them neu khong qua maxNodes]
-      // Edges:
-      //  - target->person:peer-shared (BOUGHT)
-      //  - peer->peer-shared (BOUGHT)
-      //  - peer->product:item (BOUGHT) [chi co_bought]
-      //  - product:source <- peer (BOUGHT) [co_bought]
+      // Graph shape:
+      //   customer:target, customer:peer, product:source, product:item, product:shared
+      // Edges: target→shared (BOUGHT), peer→shared (BOUGHT), peer→item (BOUGHT),
+      //        peer→source (BOUGHT, co_bought only).
       const nodes = [];
       const edges = [];
       const nodeIdSet = new Set();
@@ -296,8 +273,7 @@ export function createRecommendationGraphRouter({ neo4jClient }) {
 
       let isPartial = false;
 
-      // Add peer nodes.
-      const peerAliasMap = new Map(); // customerId -> alias
+      const peerAliasMap = new Map();
       const peerSlice = peers.slice(0, bounds.maxPeers);
       if (peers.length > bounds.maxPeers) isPartial = true;
       for (let i = 0; i < peerSlice.length; i += 1) {
@@ -314,7 +290,6 @@ export function createRecommendationGraphRouter({ neo4jClient }) {
         nodeIdSet.add(nodeId);
       }
 
-      // Add source node neu co_bought.
       if (mode === 'co_bought' && productId) {
         const sourceNodeId = makeNodeId('product:source', productId);
         const info = productMap.get(productId);
@@ -328,7 +303,6 @@ export function createRecommendationGraphRouter({ neo4jClient }) {
         nodeIdSet.add(sourceNodeId);
       }
 
-      // Add item (candidate) nodes.
       for (const it of items) {
         const nodeId = makeNodeId('product:item', it.productId);
         if (nodeIdSet.has(nodeId)) continue;
@@ -346,9 +320,6 @@ export function createRecommendationGraphRouter({ neo4jClient }) {
         nodeIdSet.add(nodeId);
       }
 
-      // Edges: BOUGHT peer -> source (co_bought) va peer -> item (co_bought + user_cf).
-      // De do thi doc duoc, ta them peer->shared product neu con budget (user_cf).
-      // user_cf: target->product:shared va peer->product:shared (shared = p1/p2 are B(u) ∩ B(peer)).
       const addEdge = (source, target, type, extra) => {
         if (edges.length >= bounds.maxEdges) { isPartial = true; return false; }
         edges.push({ source, target, type, ...(extra || {}) });
@@ -356,16 +327,13 @@ export function createRecommendationGraphRouter({ neo4jClient }) {
       };
 
       if (mode === 'user_cf') {
-        // Lay shared products cho moi peer (gioi ham so peer).
         const peerSharedMap = await fetchSharedProductsForPeers(neo4jClient, {
           customerId,
           peerIds: peerSlice.map((p) => p.customerId),
         });
-        // Add edges: target -> shared product (BOUGHT), peer -> shared product (BOUGHT).
         for (const [peerId, sharedProducts] of peerSharedMap.entries()) {
           const peerNodeId = makeNodeId('customer:peer', peerId);
           for (const sp of sharedProducts) {
-            // chi them shared product neu la product info thuc te.
             const spNodeId = makeNodeId('product:shared', sp);
             if (!nodeIdSet.has(spNodeId)) {
               if (nodes.length >= bounds.maxNodes) { isPartial = true; break; }
@@ -382,7 +350,6 @@ export function createRecommendationGraphRouter({ neo4jClient }) {
             addEdge(peerNodeId, spNodeId, 'BOUGHT');
           }
         }
-        // Add edges: peer -> item (BOUGHT) neu co trong B(peer).
         const peerIds = peerSlice.map((p) => p.customerId);
         if (peerIds.length > 0 && items.length > 0) {
           const itemPids = items.map((it) => it.productId);
@@ -402,7 +369,6 @@ export function createRecommendationGraphRouter({ neo4jClient }) {
           }
         }
       } else {
-        // co_bought: peer -> source, peer -> item (candidate).
         if (productId) {
           const sourceNodeId = makeNodeId('product:source', productId);
           for (const p of peerSlice) {
@@ -429,15 +395,11 @@ export function createRecommendationGraphRouter({ neo4jClient }) {
         }
       }
 
-      // Build contributions.
-      // user_cf: doi voi moi peer, tra sharedCount (cfReader luong).
-      // co_bought: moi buyer dong gop 1.
       const contributions = buildContributions({ mode, peerSlice }).map((c) => ({
         ...c,
         peerAlias: peerAliasMap.get(c.peerId) || null,
       }));
 
-      // Sample warning: neu peers > maxPeers hoac nodes/edges vuot bounds.
       const sampleTrimmed = peers.length > bounds.maxPeers
         || nodes.length > bounds.maxNodes
         || edges.length > bounds.maxEdges;

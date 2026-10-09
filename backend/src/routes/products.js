@@ -11,6 +11,8 @@ import {
   validateBoolean,
   validatePage,
   validatePageSize,
+  validateProductSort,
+  validatePriceRange,
   pickAllowed,
   ConflictError,
   NotFoundError,
@@ -44,7 +46,7 @@ export function createProductsRouter({ neo4jClient }) {
     }
   };
 
-  // GET /api/products
+  // Error messages stay in Vietnamese because the UI surfaces them directly.
   router.get(
     '/',
     asyncHandler(async (req, res) => {
@@ -55,12 +57,24 @@ export function createProductsRouter({ neo4jClient }) {
       const categoryId = typeof req.query.categoryId === 'string' && req.query.categoryId.trim()
         ? req.query.categoryId.trim()
         : null;
+      const brand = typeof req.query.brand === 'string' && req.query.brand.trim()
+        ? req.query.brand.trim()
+        : null;
+      const sort = validateProductSort(req.query.sort);
+      const { min: priceMin, max: priceMax } = validatePriceRange({
+        min: req.query.priceMin,
+        max: req.query.priceMax,
+      });
       const includeInactive = req.query.includeInactive === 'true' && req.auth && req.auth.role === 'admin';
       const activeFilter = includeInactive ? 'all' : 'active';
 
       const params = {
         q: q || null,
         categoryId: categoryId || null,
+        brand: brand || null,
+        priceMin,
+        priceMax,
+        sort: sort || '',
         activeFilter,
         skip: (page - 1) * pageSize,
         limit: pageSize,
@@ -157,7 +171,7 @@ export function createProductsRouter({ neo4jClient }) {
         const currentCat = cur.records[0].get('c');
         const currentCategoryId = currentCat ? currentCat.properties.categoryId : current.categoryId;
 
-        // Ap dung field nao co trong body
+        // Apply only the fields the body actually provided.
         let nextName = current.name;
         let nextDescription = current.description;
         let nextPrice = current.price;

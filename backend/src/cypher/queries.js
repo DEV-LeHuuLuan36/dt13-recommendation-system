@@ -1,44 +1,30 @@
-/**
- * Tap cac truy van Cypher can dung cho Giai doan 2:
- *  - login: lookup customer theo email
- *  - logout/me: truy van lai customer theo customerId de refresh role/active
- *  - graph-stats: dem so luong cho admin
- *  - db-schema: tao constraint
- *  - db-seed: MERGE ON CREATE cho dataset
- *  - db-verify: cac truy van COUNT kiem tra
- *
- * Moi truy van la tham so hoa, khong noi chuoi input truc tiep.
- */
+// All queries are fully parameterized; never concatenate user input into Cypher.
 
 export const CONSTRAINTS = [
-  // Customer
   'CREATE CONSTRAINT customer_customerId_unique IF NOT EXISTS FOR (c:Customer) REQUIRE c.customerId IS UNIQUE',
   'CREATE CONSTRAINT customer_email_unique IF NOT EXISTS FOR (c:Customer) REQUIRE c.email IS UNIQUE',
-  // Product
   'CREATE CONSTRAINT product_productId_unique IF NOT EXISTS FOR (p:Product) REQUIRE p.productId IS UNIQUE',
-  // Category
   'CREATE CONSTRAINT category_categoryId_unique IF NOT EXISTS FOR (cat:Category) REQUIRE cat.categoryId IS UNIQUE',
-  // Relationship uniqueness cho eventId (se tao relationship property existence + backing index)
   'CREATE CONSTRAINT bought_eventId_unique IF NOT EXISTS FOR ()-[r:BOUGHT]-() REQUIRE r.eventId IS UNIQUE',
   'CREATE CONSTRAINT viewed_eventId_unique IF NOT EXISTS FOR ()-[r:VIEWED]-() REQUIRE r.eventId IS UNIQUE',
 ];
 
 export const QUERIES = {
-  // Lookup customer by email (login)
+  // Login: lookup customer by email.
   findCustomerByEmail: `
     MATCH (c:Customer { email: $email })
     RETURN c
     LIMIT 1
   `,
 
-  // Lookup customer by customerId (auth/me + regenerate session)
+  // /me and session refresh: lookup by customerId.
   findCustomerById: `
     MATCH (c:Customer { customerId: $customerId })
     RETURN c
     LIMIT 1
   `,
 
-  // Dem so luong cho graph-stats (admin)
+  // Admin dashboard counts.
   graphStats: `
     CALL {
       MATCH (c:Customer) RETURN count(*) AS customerNodes
@@ -70,14 +56,11 @@ export const QUERIES = {
       boughtEdges, viewedEdges, belongsToEdges
   `,
 
-  // ----- Recommendations (Phase 4) -----
+  // ----- Recommendations -----
 
-  /**
-   * CF ca nhan (user_cf): goi y san pham dua tren B(u) cua khach dang nhap,
-   * tinh score = sum(sharedCount) va support = count(buyer phan biet).
-   * Loai san pham u da mua va hang inactive; peer admin / inactive khong dong gop.
-   * $limit la integer (neo4j.int).
-   */
+  // user_cf: items from peer customers that share a purchase with the target.
+  // Excludes items the target already bought, inactive products, and admin/inactive peers.
+  // score = sum(sharedCount), support = count(distinct peer).
   recommendForMe: `
     MATCH (c1:Customer { customerId: $customerId, role: 'customer', active: true })
     MATCH (c1)-[:BOUGHT]->(p1:Product)<-[:BOUGHT]-(c2:Customer)
@@ -97,13 +80,9 @@ export const QUERIES = {
     LIMIT $limit
   `,
 
-  /**
-   * Co-bought (mua cung product dang xem): khoi dau tu Product nguon (active),
-   * di qua cac buyer phan biet da mua nguon va ghi nhan cac san pham khac ho mua.
-   * Khong yeu cau khach hien tai da mua nguon. Loai nguon, hang c1 da mua,
-   * peer admin/inactive va ung vien inactive. score = support (so buyer phan biet).
-   * $limit la integer (neo4j.int).
-   */
+  // co_bought: other items bought by customers who also bought `source`.
+  // The target does not need to have bought source. Excludes source, items the
+  // target already bought, and admin/inactive buyers/inactive candidates.
   recommendForProduct: `
     MATCH (c1:Customer { customerId: $customerId, role: 'customer', active: true })
     MATCH (source:Product { productId: $productId, active: true })
@@ -125,31 +104,21 @@ export const QUERIES = {
     LIMIT $limit
   `,
 
-  /**
-   * Kiem tra nguon (source) ton tai/active truoc khi goi y.
-   * Tra ve productId + active (dung de route tra 404 neu can).
-   */
+  // Source lookup for co_bought: existence + active flag.
   findSourceProduct: `
     MATCH (p:Product { productId: $productId })
     RETURN p.productId AS productId, p.active AS active, p.datasetTag AS datasetTag
     LIMIT 1
   `,
 
-  /**
-   * Kiem tra target customer ton tai va con active (Phase 5: chi de minh hoa graph).
-   * Tra customerId + role + active de route co the tra 400/404 neu can.
-   */
+  // Target customer lookup for the analytics graph endpoint.
   findTargetCustomer: `
     MATCH (c:Customer { customerId: $customerId })
     RETURN c.customerId AS customerId, c.role AS role, c.active AS active
     LIMIT 1
   `,
 
-  /**
-   * Lay peer list toi da (maxPeers) theo sharedCount (B) cho Phase 5.
-   * Moi peer duy nhat mot dong kem sharedCount, nhung peer co sharedCount > 0.
-   * Cung role=customer, active=true va khac u.
-   */
+  // Top peers by sharedCount for the graph endpoint.
   cfPeers: `
     MATCH (c1:Customer { customerId: $customerId, role: 'customer', active: true })
     MATCH (c1)-[:BOUGHT]->(p1:Product)<-[:BOUGHT]-(c2:Customer)
@@ -161,20 +130,14 @@ export const QUERIES = {
     RETURN c2.customerId AS customerId, sharedCount
   `,
 
-  /**
-   * Lay productIds ma peer v va target c1 cung mua (B(u) ∩ B(v)).
-   * Dung cho Phase 5 contribute table.
-   */
+  // Items both the target and a peer bought (B(u) ∩ B(v)).
   cfSharedProducts: `
     MATCH (c1:Customer { customerId: $customerId })-[:BOUGHT]->(p1:Product)<-[:BOUGHT]-(c2:Customer { customerId: $peerId })
     WHERE c1.role = 'customer' AND c2.role = 'customer' AND c1.active = true AND c2.active = true
     RETURN DISTINCT p1.productId AS productId
   `,
 
-  /**
-   * Lay peer candidates (BOUGHT cua peer) tru p in B(u) va p == source.
-   * Phase 5: do thi minh hoa, gioi han theo topK peers va limit max.
-   */
+  // Peer candidates for the graph: peer → candidate with their sharedCount.
   cfPeerCandidates: `
     MATCH (c1:Customer { customerId: $customerId })-[:BOUGHT]->(p1:Product)<-[:BOUGHT]-(c2:Customer)
     WHERE c1.role = 'customer' AND c1.active = true
@@ -182,16 +145,13 @@ export const QUERIES = {
     WITH c1, c2, count(DISTINCT p1) AS sharedCount
     MATCH (c2)-[:BOUGHT]->(p2:Product)
     WHERE p2.active = true
-      AND p2 <> $sourceName    /* chi placeholder, query co_bought xu ly rieng */
+      AND p2 <> $sourceName
     WITH DISTINCT p2, c2, sharedCount
     RETURN p2.productId AS productId, c2.customerId AS peerId, sharedCount
     LIMIT toInteger($maxRows)
   `,
 
-  /**
-   * Lay peer cho co_bought: cac buyer phan biet role=customer active=true da mua source.
-   * Phase 5: do thi minh hoa, co the clip theo $maxK.
-   */
+  // Distinct buyers of the source product (for co_bought graph).
   coBoughtBuyers: `
     MATCH (source:Product { productId: $productId, active: true })<-[:BOUGHT]-(buyer:Customer)
     WHERE buyer.role = 'customer' AND buyer.active = true
@@ -199,10 +159,7 @@ export const QUERIES = {
     LIMIT toInteger($maxK)
   `,
 
-  /**
-   * Lay cac candidate ma buyer da mua (tru source va hoa c1).
-   * Phase 5: do thi minh hoa.
-   */
+  // Candidates purchased by buyers of the source (excluding source itself).
   coBoughtBuyerCandidates: `
     MATCH (source:Product { productId: $productId, active: true })<-[:BOUGHT]-(buyer:Customer)-[:BOUGHT]->(candidate:Product)
     WHERE buyer.role = 'customer' AND buyer.active = true
@@ -212,9 +169,7 @@ export const QUERIES = {
     LIMIT toInteger($maxRows)
   `,
 
-  /**
-   * Lay product info theo danh sach productIds. Read-only.
-   */
+  // Read-only product lookup by id.
   findProductsByIds: `
     MATCH (p:Product)
     WHERE p.productId IN $productIds
@@ -222,10 +177,7 @@ export const QUERIES = {
            p.imageUrl AS imageUrl, p.price AS price
   `,
 
-  /**
-   * Lay Category theo productIds qua BELONGS_TO (read-only).
-   * Phase 5: do thi minh hoa them category context neu can.
-   */
+  // Read-only category lookup for the listed product ids.
   findCategoriesByProductIds: `
     MATCH (p:Product)-[:BELONGS_TO]->(c:Category)
     WHERE p.productId IN $productIds
@@ -238,8 +190,7 @@ export const QUERIES = {
 // =========================
 
 export const SEED = {
-  // Admin: chi tao Customer neu chua ton tai, gan passwordHash neu chua co.
-  // Bao ve passwordHash da ton tai (khong ghi de).
+  // Upsert admin; preserves any existing passwordHash on MATCH.
   upsertAdmin: `
     MERGE (c:Customer { customerId: $customerId })
     ON CREATE SET
@@ -296,7 +247,7 @@ export const SEED = {
     RETURN p
   `,
 
-  // Moi Product thuoc 1 Category (BELONGS_TO).
+  // Each Product belongs to exactly one Category. Replace any previous BELONGS_TO.
   linkBelongsTo: `
     MATCH (p:Product { productId: $productId })
     MATCH (cat:Category { categoryId: $categoryId })
@@ -307,7 +258,7 @@ export const SEED = {
     RETURN p, b, cat
   `,
 
-  // V2: chi set catalogVersion + datasetTag khi MATCH (khong sua name/description/price/imageUrl).
+  // V2 upsert: only stamps catalogVersion + datasetTag on MATCH (never overwrites name/description/price/imageUrl).
   upsertProductV2: `
     MERGE (p:Product { productId: $productId })
     ON CREATE SET
@@ -325,7 +276,7 @@ export const SEED = {
     RETURN p
   `,
 
-  // V2: customer moi (co persona). Hash password duoc pass vao. KHONG sua customer V1.
+  // V2 customer with persona; never mutates an existing V1 customer.
   upsertCustomerV2: `
     MERGE (c:Customer { customerId: $customerId })
     ON CREATE SET
@@ -340,7 +291,7 @@ export const SEED = {
     RETURN c
   `,
 
-  // V2: admin moi. Khong sua admin V1.
+  // V2 admin upsert; never mutates an existing V1 admin.
   upsertAdminV2: `
     MERGE (c:Customer { customerId: $customerId })
     ON CREATE SET
@@ -354,7 +305,6 @@ export const SEED = {
     RETURN c
   `,
 
-  // V2: mark inactive (set active=false).
   markInactive: `
     MATCH (c:Customer { customerId: $customerId })
     SET c.active = false,
@@ -362,7 +312,7 @@ export const SEED = {
     RETURN c
   `,
 
-  // BOUGHT voi MERGE theo eventId de dam bao idempotency.
+  // Idempotent via eventId; ON CREATE writes the interaction payload, ON MATCH only refreshes the datasetTag.
   linkBought: `
     MERGE (c:Customer { customerId: $customerId })
     MERGE (p:Product { productId: $productId })
@@ -391,7 +341,7 @@ export const SEED = {
 };
 
 // =========================
-// VERIFY QUERIES (chi doc)
+// VERIFY QUERIES (read-only)
 // =========================
 
 export const VERIFY = {
@@ -508,36 +458,46 @@ export const VERIFY = {
 };
 
 // =========================
-// CRUD QUERIES (Phase 3)
+// CRUD QUERIES
 // =========================
 
-/**
- * Dinh dang thoi gian tra ve tu Neo4j se duoc map sang ISO string qua mappers.
- *
- * Cac truy van duoi day su dung tham so hoa hoan toan, khong noi input truc tiep
- * vao Cypher.
- */
 export const CRUD = {
   // ----- Product -----
 
-  /** Liet ke Product theo filter (q, categoryId) va phan trang. activeFilter:
-   *  - 'active' (default): chi active=true
-   *  - 'all': ca active va inactive (chi admin goi)
-   */
+  // Filtered product list. $q is already Vietnamese-diacritic-stripped by the
+  // client. $activeFilter is 'active' (default) or 'all' (admin only).
+  // $brand matches case-insensitively. $priceMin/$priceMax are integer VND.
+  // $sort picks one of: price_asc, price_desc, name_asc, name_desc, newest, relevance.
+  // productId ASC is the tie-breaker so pagination is stable.
   listProducts: `
     MATCH (p:Product)
     OPTIONAL MATCH (p)-[b:BELONGS_TO]->(c:Category)
     WITH p, c,
       CASE WHEN $q IS NULL OR $q = '' THEN true
-           ELSE toLower(p.name) CONTAINS toLower($q) OR toLower(coalesce(p.description, '')) CONTAINS toLower($q)
+           ELSE toLower(p.name) CONTAINS toLower($q)
+             OR toLower(coalesce(p.brand, '')) CONTAINS toLower($q)
+             OR toLower(coalesce(p.model, '')) CONTAINS toLower($q)
+             OR toLower(coalesce(p.description, '')) CONTAINS toLower($q)
+             OR toLower(coalesce(p.searchText, '')) CONTAINS toLower($q)
       END AS matchesQ,
       CASE WHEN $categoryId IS NULL OR $categoryId = '' THEN true
            ELSE c.categoryId = $categoryId
       END AS matchesCat,
-      CASE WHEN $activeFilter = 'all' THEN true ELSE coalesce(p.active, true) = true END AS matchesActive
-    WHERE matchesQ AND matchesCat AND matchesActive
+      CASE WHEN $activeFilter = 'all' THEN true ELSE coalesce(p.active, true) = true END AS matchesActive,
+      CASE WHEN $brand IS NULL OR $brand = '' THEN true
+           ELSE toLower(coalesce(p.brand, '')) = toLower($brand)
+      END AS matchesBrand,
+      CASE WHEN $priceMin IS NULL THEN true ELSE coalesce(p.price, 0) >= toInteger($priceMin) END AS matchesPriceMin,
+      CASE WHEN $priceMax IS NULL THEN true ELSE coalesce(p.price, 0) <= toInteger($priceMax) END AS matchesPriceMax
+    WHERE matchesQ AND matchesCat AND matchesActive AND matchesBrand AND matchesPriceMin AND matchesPriceMax
     WITH p, c
-    ORDER BY p.productId ASC
+    ORDER BY
+      CASE WHEN $sort = 'price_asc'  THEN p.price END ASC,
+      CASE WHEN $sort = 'price_desc' THEN p.price END DESC,
+      CASE WHEN $sort = 'name_asc'   THEN p.name  END ASC,
+      CASE WHEN $sort = 'name_desc'  THEN p.name  END DESC,
+      CASE WHEN $sort = 'newest'     THEN p.createdAt END DESC,
+      p.productId ASC
     SKIP toInteger($skip) LIMIT toInteger($limit)
     RETURN p, c
   `,
@@ -547,13 +507,22 @@ export const CRUD = {
     OPTIONAL MATCH (p)-[b:BELONGS_TO]->(c:Category)
     WITH p, c,
       CASE WHEN $q IS NULL OR $q = '' THEN true
-           ELSE toLower(p.name) CONTAINS toLower($q) OR toLower(coalesce(p.description, '')) CONTAINS toLower($q)
+           ELSE toLower(p.name) CONTAINS toLower($q)
+             OR toLower(coalesce(p.brand, '')) CONTAINS toLower($q)
+             OR toLower(coalesce(p.model, '')) CONTAINS toLower($q)
+             OR toLower(coalesce(p.description, '')) CONTAINS toLower($q)
+             OR toLower(coalesce(p.searchText, '')) CONTAINS toLower($q)
       END AS matchesQ,
       CASE WHEN $categoryId IS NULL OR $categoryId = '' THEN true
            ELSE c.categoryId = $categoryId
       END AS matchesCat,
-      CASE WHEN $activeFilter = 'all' THEN true ELSE coalesce(p.active, true) = true END AS matchesActive
-    WHERE matchesQ AND matchesCat AND matchesActive
+      CASE WHEN $activeFilter = 'all' THEN true ELSE coalesce(p.active, true) = true END AS matchesActive,
+      CASE WHEN $brand IS NULL OR $brand = '' THEN true
+           ELSE toLower(coalesce(p.brand, '')) = toLower($brand)
+      END AS matchesBrand,
+      CASE WHEN $priceMin IS NULL THEN true ELSE coalesce(p.price, 0) >= toInteger($priceMin) END AS matchesPriceMin,
+      CASE WHEN $priceMax IS NULL THEN true ELSE coalesce(p.price, 0) <= toInteger($priceMax) END AS matchesPriceMax
+    WHERE matchesQ AND matchesCat AND matchesActive AND matchesBrand AND matchesPriceMin AND matchesPriceMax
     RETURN count(p) AS total
   `,
 
@@ -576,7 +545,6 @@ export const CRUD = {
     LIMIT 1
   `,
 
-  /** Tao Product neu chua ton tai. Tra ve node. */
   createProduct: `
     CREATE (p:Product {
       productId: $productId,
@@ -689,7 +657,8 @@ export const CRUD = {
     WHERE c.role = 'customer'
       AND ($q IS NULL OR $q = ''
            OR toLower(c.name) CONTAINS toLower($q)
-           OR toLower(c.email) CONTAINS toLower($q))
+           OR toLower(c.email) CONTAINS toLower($q)
+           OR toLower(c.customerId) CONTAINS toLower($q))
     WITH c
     ORDER BY c.customerId ASC
     SKIP toInteger($skip) LIMIT toInteger($limit)
@@ -701,7 +670,8 @@ export const CRUD = {
     WHERE c.role = 'customer'
       AND ($q IS NULL OR $q = ''
            OR toLower(c.name) CONTAINS toLower($q)
-           OR toLower(c.email) CONTAINS toLower($q))
+           OR toLower(c.email) CONTAINS toLower($q)
+           OR toLower(c.customerId) CONTAINS toLower($q))
     RETURN count(c) AS total
   `,
 
@@ -748,10 +718,7 @@ export const CRUD = {
     RETURN c
   `,
 
-  /**
-   * Dem behaviors theo tung loai de phan biet 404 (khong co khach) va 409 (co lich su).
-   * Tra ve: customer, bought, viewed (moi loai la count).
-   */
+  // Distinguishes 404 (no customer) from 409 (customer with history).
   customerBehaviorBreakdown: `
     MATCH (c:Customer { customerId: $customerId })
     OPTIONAL MATCH (c)-[b:BOUGHT]->(:Product)
@@ -762,10 +729,6 @@ export const CRUD = {
 
   // ----- Interactions -----
 
-  /**
-   * Lookup BOUGHT theo eventId. Tra ve: edge, customerId, productId, quantity, unitPrice, purchasedAt.
-   * Neu khong co -> 0 records.
-   */
   findBoughtByEventId: `
     MATCH (c:Customer)-[r:BOUGHT { eventId: $eventId }]->(p:Product)
     RETURN c.customerId AS customerId, p.productId AS productId, r AS r
@@ -778,7 +741,7 @@ export const CRUD = {
     LIMIT 1
   `,
 
-  /** Lay gia va trang thai cua Product kem role/active cua Customer trong 1 truy van (kiem tra trong transaction). */
+  // Used inside the write transaction to atomically check customer+product state.
   fetchCustomerAndProductForInteraction: `
     MATCH (c:Customer { customerId: $customerId })
     OPTIONAL MATCH (c)-[oldB:BOUGHT { eventId: $eventId }]->(pB:Product)
@@ -788,7 +751,6 @@ export const CRUD = {
     RETURN c, existingBought, existingViewed
   `,
 
-  /** Ghi BOUGHT moi. Dam bao eventId duoc truyen vao. */
   createBought: `
     MATCH (c:Customer { customerId: $customerId })
     MATCH (p:Product { productId: $productId })
@@ -800,7 +762,6 @@ export const CRUD = {
     RETURN r, c.customerId AS customerId, p.productId AS productId
   `,
 
-  /** Ghi VIEWED moi. */
   createViewed: `
     MATCH (c:Customer { customerId: $customerId })
     MATCH (p:Product { productId: $productId })
@@ -812,7 +773,6 @@ export const CRUD = {
 
   // ----- History -----
 
-  /** Liet ke BOUGHT cua customer, kem thong tin Product (ke ca Product inactive). */
   listBoughtHistory: `
     MATCH (c:Customer { customerId: $customerId })-[r:BOUGHT]->(p:Product)
     WITH c, r, p
@@ -841,11 +801,6 @@ export const CRUD = {
 
   // ----- Verify / dataset -----
 
-  /**
-   * Phan biet count seed (datasetTag = 'DT13_SEED_V1') va total graph.
-   * Tra ve: seedBought, seedViewed, seedProduct, seedCustomer, seedCategory, seedBelongsTo,
-   *         totalBought, totalViewed, totalProduct, totalCustomer, totalCategory, totalBelongsTo.
-   */
   countByDatasetTag: `
     CALL {
       MATCH ()-[r:BOUGHT { datasetTag: 'DT13_SEED_V1' }]->()

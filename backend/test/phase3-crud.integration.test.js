@@ -1,7 +1,6 @@
 /**
- * Integration test cho CRUD Product/Category/Customer + interactions + history
- * tren Neo4j that. Dung fixture rieng voi ID prefix `DT13_PHASE3_<runId>` de
- * khong anh huong seed hay xoa du lieu nguoi dung.
+ * Integration tests for Product/Category/Customer CRUD plus interactions and history.
+ * Runs against a real Neo4j with a per-run fixture prefix so seed/user data is not touched.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -24,9 +23,8 @@ async function cleanupByPrefix(session, prefix) {
        DETACH DELETE n`,
       { prefix }
     );
-    // Xoa them cac ban ghi CRUD-tao (productId/categoryId/customerId bat dau bang
-    // CUST_/PROD_/CAT_ + UUID, nhung khong phai seed IDs) de tranh sot tu test.
-    // Pattern UUID hex 32 ky tu.
+    // Also purge rows created by CRUD paths (UUID-style IDs that do not
+    // collide with the seed prefixes).
     await tx.run(
       `MATCH (p:Product) WHERE p.productId =~ 'PROD_[a-f0-9]{32}' DETACH DELETE p`
     );
@@ -36,22 +34,35 @@ async function cleanupByPrefix(session, prefix) {
     await tx.run(
       `MATCH (c:Customer) WHERE c.customerId =~ 'CUST_[a-f0-9]{32}' DETACH DELETE c`
     );
+    // Only delete BOUGHT/VIEWED created by CRUD; canonical seed markers are off limits.
     await tx.run(
-      `MATCH ()-[r:BOUGHT]-() WHERE r.eventId IS NOT NULL AND NOT r.eventId STARTS WITH 'BOUGHT_DT13_SEED_V1_' DETACH DELETE r`
+      `MATCH ()-[r:BOUGHT]-() WHERE r.eventId IS NOT NULL
+         AND NOT r.eventId STARTS WITH 'BOUGHT_DT13_SEED_V1_'
+         AND NOT r.eventId STARTS WITH 'BOUGHT_DT13_SEED_V1_CLEAN_'
+         AND NOT r.eventId STARTS WITH 'BOUGHT_DT13_SEED_V2_'
+         AND NOT r.eventId STARTS WITH 'BOUGHT_CATALOG_REAL_120_V1_'
+         AND NOT r.eventId STARTS WITH 'RC_B'
+       DETACH DELETE r`
     );
     await tx.run(
-      `MATCH ()-[r:VIEWED]-() WHERE r.eventId IS NOT NULL AND NOT r.eventId STARTS WITH 'VIEWED_DT13_SEED_V1_' DETACH DELETE r`
+      `MATCH ()-[r:VIEWED]-() WHERE r.eventId IS NOT NULL
+         AND NOT r.eventId STARTS WITH 'VIEWED_DT13_SEED_V1_'
+         AND NOT r.eventId STARTS WITH 'VIEWED_DT13_SEED_V1_CLEAN_'
+         AND NOT r.eventId STARTS WITH 'VIEWED_DT13_SEED_V2_'
+         AND NOT r.eventId STARTS WITH 'VIEWED_CATALOG_REAL_120_V1_'
+         AND NOT r.eventId STARTS WITH 'RC_V'
+       DETACH DELETE r`
     );
   });
 }
 
 /**
- * Cleanup dung driver app (neo4jClient) — dam bao xoa duoc cac record do
- * API test vua ghi qua driver riêng cua app (transaction co the con treo tren
- * pool cua driver neo4jClient test). Ham nay khong tham chieu session test.
+ * Cleanup through the app's neo4jClient so it can remove records that the
+ * API test just wrote (an open transaction may still hold the session pool).
+ * This helper does not reuse the test's session.
  *
- * Vi neo4jClient chi co method `write(query, params)` chu khong phai
- * `executeWrite(worker)`, can chay nhieu truy van rieng le.
+ * neo4jClient only exposes `write(query, params)`, not `executeWrite(worker)`,
+ * so we issue several independent queries instead of one transaction.
  */
 async function cleanupByPrefixViaApp(neo4jClient, prefix) {
   if (!neo4jClient || typeof neo4jClient.write !== 'function') return;
@@ -77,11 +88,25 @@ async function cleanupByPrefixViaApp(neo4jClient, prefix) {
   await neo4jClient.write(
     `MATCH (c:Customer) WHERE c.customerId =~ 'CUST_[a-f0-9]{32}' DETACH DELETE c`
   );
+  // Only remove BOUGHT/VIEWED written by CRUD paths; the canonical seed
+  // markers are off limits.
   await neo4jClient.write(
-    `MATCH ()-[r:BOUGHT]-() WHERE r.eventId IS NOT NULL AND NOT r.eventId STARTS WITH 'BOUGHT_DT13_SEED_V1_' DETACH DELETE r`
+    `MATCH ()-[r:BOUGHT]-() WHERE r.eventId IS NOT NULL
+       AND NOT r.eventId STARTS WITH 'BOUGHT_DT13_SEED_V1_'
+       AND NOT r.eventId STARTS WITH 'BOUGHT_DT13_SEED_V1_CLEAN_'
+       AND NOT r.eventId STARTS WITH 'BOUGHT_DT13_SEED_V2_'
+       AND NOT r.eventId STARTS WITH 'BOUGHT_CATALOG_REAL_120_V1_'
+       AND NOT r.eventId STARTS WITH 'RC_B'
+     DETACH DELETE r`
   );
   await neo4jClient.write(
-    `MATCH ()-[r:VIEWED]-() WHERE r.eventId IS NOT NULL AND NOT r.eventId STARTS WITH 'VIEWED_DT13_SEED_V1_' DETACH DELETE r`
+    `MATCH ()-[r:VIEWED]-() WHERE r.eventId IS NOT NULL
+       AND NOT r.eventId STARTS WITH 'VIEWED_DT13_SEED_V1_'
+       AND NOT r.eventId STARTS WITH 'VIEWED_DT13_SEED_V1_CLEAN_'
+       AND NOT r.eventId STARTS WITH 'VIEWED_DT13_SEED_V2_'
+       AND NOT r.eventId STARTS WITH 'VIEWED_CATALOG_REAL_120_V1_'
+       AND NOT r.eventId STARTS WITH 'RC_V'
+     DETACH DELETE r`
   );
 }
 
@@ -172,7 +197,7 @@ async function setupProductFixture(session, prefix, { productIdSuffix = 'PROD_1'
 test('integration: Phase 3 CRUD + interactions + history', async (t) => {
   const config = loadConfig();
   if (!config.neo4jFullyConfigured) {
-    t.skip('NEO4J chua cau hinh; bo qua integration Phase 3.');
+    t.skip('NEO4J not configured; skipping Phase 3 integration tests.');
     return;
   }
 
@@ -185,9 +210,9 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
   const { app, neo4jClient } = bootstrap();
 
   t.after(async () => {
-    // Cleanup su dung neo4jClient (app driver) de dam bao xoa duoc record
-    // ma cac transaction vua commit qua app. retry 3 lan de chong race voi
-    // pool cua driver rieng.
+    // Cleanup uses the app's neo4jClient so that records the app's own
+    // transactions just committed get removed too. Retry up to 3 times to
+    // outlast a busy driver pool.
     for (let i = 0; i < 3; i += 1) {
       try {
         await cleanupByPrefixViaApp(neo4jClient, 'DT13_PHASE3_');
@@ -203,9 +228,9 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
     }
   });
 
-  // Setup fixture chung cho toan bo suite.
+  // Shared fixture for the whole suite.
   const prefix = `DT13_PHASE3_${randomBytes(3).toString('hex')}`;
-  // Dam bao sach truoc khi bat dau (tranh sot tu lan chay truoc)
+  // Start clean (defensive against leftover state from a previous run).
   await cleanupByPrefixViaApp(neo4jClient, 'DT13_PHASE3_').catch(() => {});
   await cleanupByPrefix(session, 'DT13_PHASE3_').catch(() => {});
   const admin = await setupAdminFixture(session, prefix);
@@ -221,7 +246,7 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
 
   // ----- Permission / auth -----
 
-  await t.test('unauthenticated -> 401 (products/categories/customers/history/interactions)', async () => {
+  await t.test('unauthenticated -> 401 on products/categories/customers/history/interactions', async () => {
     const r1 = await request(app).get('/api/products');
     assert.equal(r1.status, 401);
     const r2 = await request(app).get('/api/categories');
@@ -246,7 +271,7 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
 
   // ----- Category CRUD -----
 
-  await t.test('admin CRUD Category (tao/sua/xoa khi rong)', async () => {
+  await t.test('admin CRUD Category: create/update/delete when empty', async () => {
     // POST -> 201
     const create = await adminAgent.post('/api/categories').send({
       name: 'Phase3 New Category',
@@ -262,18 +287,18 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
     assert.equal(patch.status, 200);
     assert.equal(patch.body.name, 'Phase3 Renamed');
 
-    // DELETE -> 200 (rong)
+    // DELETE -> 200 (empty category)
     const del = await adminAgent.delete(`/api/categories/${id}`);
     assert.equal(del.status, 200);
 
-    // GET -> khong con id
+    // GET -> id is gone
     const list = await adminAgent.get('/api/categories');
     assert.equal(list.status, 200);
     const stillThere = list.body.items.some((c) => c.categoryId === id);
     assert.equal(stillThere, false);
   });
 
-  await t.test('admin khong the xoa Category co Product (409)', async () => {
+  await t.test('admin cannot delete a Category that still has Products (409)', async () => {
     const res = await adminAgent.delete(`/api/categories/${catA.categoryId}`);
     assert.equal(res.status, 409, JSON.stringify(res.body));
     assert.equal(res.body.error.code, 'CATEGORY_HAS_PRODUCTS');
@@ -282,7 +307,7 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
   // ----- Product CRUD -----
 
   let createdProductId = null;
-  await t.test('admin tao Product (POST) -> 201 va BELONGS_TO duoc tao', async () => {
+  await t.test('admin POST Product -> 201 and creates the BELONGS_TO edge', async () => {
     const res = await adminAgent.post('/api/products').send({
       name: 'Phase3 New Product',
       description: 'mo phong',
@@ -297,7 +322,7 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
     assert.ok(res.body.imageUrl);
     createdProductId = res.body.productId;
 
-    // Verify BELONGS_TO trong DB
+    // Verify BELONGS_TO was created in the database
     const check = await session.executeRead(async (tx) => tx.run(
       `MATCH (p:Product { productId: $pid })-[b:BELONGS_TO]->(c:Category { categoryId: $cid })
        RETURN count(b) AS c`,
@@ -306,7 +331,7 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
     assert.equal(Number(check.records[0].get('c')), 1);
   });
 
-  await t.test('admin PATCH Product (doi gia + active + category) giu dung 1 BELONGS_TO', async () => {
+  await t.test('admin PATCH Product (price + active + category) keeps exactly one BELONGS_TO', async () => {
     const patch = await adminAgent.patch(`/api/products/${createdProductId}`).send({
       price: 3_750_000,
       active: false,
@@ -317,7 +342,7 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
     assert.equal(patch.body.active, false);
     assert.equal(patch.body.categoryId, catB.categoryId);
 
-    // Verify chi con 1 BELONGS_TO va tro ve catB
+    // Verify only one BELONGS_TO remains, pointing at catB.
     const check = await session.executeRead(async (tx) => tx.run(
       `MATCH (p:Product { productId: $pid })-[b:BELONGS_TO]->(c:Category)
        RETURN c.categoryId AS cid, count(b) AS rels`,
@@ -327,7 +352,7 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
     assert.equal(check.records[0].get('cid'), catB.categoryId);
   });
 
-  await t.test('customer khong the POST Product (403)', async () => {
+  await t.test('customer cannot POST Product (403)', async () => {
     const custAgent = request.agent(app);
     const login = await custAgent.post('/api/auth/login').send({ email: customer.email, password: customer.password });
     assert.equal(login.status, 200);
@@ -336,10 +361,10 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
     assert.equal(res.body.error.code, 'ADMIN_REQUIRED');
   });
 
-  await t.test('admin xoa Product khong co lich su (200)', async () => {
+  await t.test('admin deletes a Product with no history (200)', async () => {
     const res = await adminAgent.delete(`/api/products/${createdProductId}`);
     assert.equal(res.status, 200, JSON.stringify(res.body));
-    // Verify xoa that
+    // Verify the row is actually gone
     const check = await session.executeRead(async (tx) => tx.run(
       `MATCH (p:Product { productId: $pid }) RETURN p LIMIT 1`,
       { pid: createdProductId }
@@ -350,7 +375,7 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
   // ----- Customer CRUD -----
 
   let createdCustomerId = null;
-  await t.test('admin tao Customer (POST) -> 201, hash va email chuan hoa', async () => {
+  await t.test('admin POST Customer -> 201, hash is stored and email is normalized', async () => {
     const emailRaw = `  Phase3-New-User-${prefix}@Example.Test  `;
     const res = await adminAgent.post('/api/customers').send({
       name: 'Phase3 New User',
@@ -364,12 +389,12 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
     assert.ok(!('passwordHash' in res.body));
     createdCustomerId = res.body.customerId;
 
-    // Login that bang customer moi (qua Neo4j that)
+    // Login succeeds with the freshly created customer (real Neo4j path).
     const login = await request(app).post('/api/auth/login').send({ email: res.body.email, password: 'Phase3-Strong-001' });
     assert.equal(login.status, 200);
   });
 
-  await t.test('admin tao Customer email trung -> 409', async () => {
+  await t.test('admin POST Customer with duplicate email -> 409', async () => {
     const res = await adminAgent.post('/api/customers').send({
       name: 'Duplicate',
       email: `phase3-new-user-${prefix.toLowerCase()}@example.test`,
@@ -379,7 +404,7 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
     assert.equal(res.body.error.code, 'EMAIL_DUPLICATE');
   });
 
-  await t.test('admin PATCH Customer (sua name/active, khong doi password)', async () => {
+  await t.test('admin PATCH Customer (update name/active, never the password)', async () => {
     const patch = await adminAgent.patch(`/api/customers/${createdCustomerId}`).send({
       name: 'Phase3 Renamed',
       active: false,
@@ -389,10 +414,10 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
     assert.equal(patch.body.active, false);
   });
 
-  await t.test('admin khong the xoa Customer co lich su (409)', async () => {
-    // Tao interaction truoc
+  await t.test('admin cannot delete a Customer that has history (409)', async () => {
+    // Create an interaction first.
     const custAgent = request.agent(app);
-    // Re-active de co the login
+    // Re-activate so we can log in.
     await session.executeWrite(async (tx) => {
       await tx.run(`MATCH (c:Customer { customerId: $cid }) SET c.active = true`, { cid: createdCustomerId });
     });
@@ -412,7 +437,7 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
     assert.equal(del.body.error.code, 'CUSTOMER_HAS_HISTORY');
   });
 
-  await t.test('admin xoa Customer chua co lich su (200)', async () => {
+  await t.test('admin deletes a Customer that has no history (200)', async () => {
     const res = await adminAgent.delete(`/api/customers/${customer2.customerId}`);
     assert.equal(res.status, 200, JSON.stringify(res.body));
   });
@@ -420,7 +445,7 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
   // ----- Interactions: VIEWED -----
 
   let viewEventId;
-  await t.test('customer ghi VIEWED lan dau -> 201', async () => {
+  await t.test('customer writes VIEWED for the first time -> 201', async () => {
     const custAgent = request.agent(app);
     const login = await custAgent.post('/api/auth/login').send({ email: customer.email, password: customer.password });
     assert.equal(login.status, 200);
@@ -437,7 +462,7 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
     assert.ok(res.body.occurredAt);
   });
 
-  await t.test('customer retry VIEWED cung eventId -> 200, khong tao them', async () => {
+  await t.test('replaying VIEWED with the same eventId -> 200 and does not create a new edge', async () => {
     const custAgent = request.agent(app);
     await custAgent.post('/api/auth/login').send({ email: customer.email, password: customer.password });
     const res = await custAgent.post('/api/interactions/views').send({
@@ -447,7 +472,7 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
     assert.equal(res.status, 200, JSON.stringify(res.body));
     assert.equal(res.body.eventId, viewEventId);
 
-    // Verify trong DB chi co 1 VIEWED voi eventId do
+    // DB must hold exactly one VIEWED edge for this eventId.
     const check = await session.executeRead(async (tx) => tx.run(
       `MATCH ()-[r:VIEWED { eventId: $eid }]->() RETURN count(r) AS c`,
       { eid: viewEventId }
@@ -455,7 +480,7 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
     assert.equal(Number(check.records[0].get('c')), 1);
   });
 
-  await t.test('customer retry VIEWED cung eventId khac productId -> 409', async () => {
+  await t.test('replaying VIEWED with the same eventId but different productId -> 409', async () => {
     const custAgent = request.agent(app);
     await custAgent.post('/api/auth/login').send({ email: customer.email, password: customer.password });
     const res = await custAgent.post('/api/interactions/views').send({
@@ -469,7 +494,7 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
   // ----- Interactions: BOUGHT -----
 
   let boughtEventId;
-  await t.test('customer mua lan dau -> 201, unitPrice chup tu Product', async () => {
+  await t.test('first BOUGHT -> 201, unitPrice is taken from the Product', async () => {
     const custAgent = request.agent(app);
     await custAgent.post('/api/auth/login').send({ email: customer.email, password: customer.password });
     boughtEventId = `${prefix}_EVT_BOUGHT_1`;
@@ -482,11 +507,11 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
     assert.equal(res.body.eventId, boughtEventId);
     assert.equal(res.body.type, 'bought');
     assert.equal(res.body.quantity, 2);
-    // price seed fixture = 1_500_000
+    // Fixture product price = 1_500_000
     assert.equal(res.body.unitPrice, 1_500_000);
   });
 
-  await t.test('customer retry BOUGHT cung payload -> 200 giu nguyen', async () => {
+  await t.test('replaying BOUGHT with the same payload -> 200 and keeps unitPrice', async () => {
     const custAgent = request.agent(app);
     await custAgent.post('/api/auth/login').send({ email: customer.email, password: customer.password });
     const res = await custAgent.post('/api/interactions/purchases').send({
@@ -498,7 +523,7 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
     assert.equal(res.body.unitPrice, 1_500_000);
   });
 
-  await t.test('customer retry BOUGHT cung eventId quantity khac -> 409', async () => {
+  await t.test('replaying BOUGHT with same eventId but different quantity -> 409', async () => {
     const custAgent = request.agent(app);
     await custAgent.post('/api/auth/login').send({ email: customer.email, password: customer.password });
     const res = await custAgent.post('/api/interactions/purchases').send({
@@ -510,12 +535,12 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
     assert.equal(res.body.error.code, 'EVENT_ID_CONFLICT');
   });
 
-  await t.test('doi Product.price khong sua BOUGHT.unitPrice cu', async () => {
-    // Admin doi gia Product1 tu 1.5tr -> 9.99tr
+  await t.test('changing Product.price does not mutate historical BOUGHT.unitPrice', async () => {
+    // Admin moves product1 from 1.5M to 9.99M.
     const patch = await adminAgent.patch(`/api/products/${product1.productId}`).send({ price: 9_990_000 });
     assert.equal(patch.status, 200, JSON.stringify(patch.body));
 
-    // Customer goi mua BOUGHT retry -> 200, unitPrice van 1.5tr
+    // Customer replays the original BOUGHT -> 200, unitPrice must remain 1.5M.
     const custAgent = request.agent(app);
     await custAgent.post('/api/auth/login').send({ email: customer.email, password: customer.password });
     const res = await custAgent.post('/api/interactions/purchases').send({
@@ -524,11 +549,11 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
       quantity: 2,
     });
     assert.equal(res.status, 200);
-    assert.equal(res.body.unitPrice, 1_500_000, 'unitPrice lich su phai giu gia luc mua');
+    assert.equal(res.body.unitPrice, 1_500_000, 'historical unitPrice must be preserved');
   });
 
-  await t.test('customer mua BOUGHT vao Product active=false -> 409', async () => {
-    // Admin chuyen product1 sang inactive
+  await t.test('BOUGHT against an inactive Product -> 409', async () => {
+    // Admin flips product1 to inactive.
     await adminAgent.patch(`/api/products/${product1.productId}`).send({ active: false });
     const custAgent = request.agent(app);
     await custAgent.post('/api/auth/login').send({ email: customer.email, password: customer.password });
@@ -542,10 +567,8 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
     assert.equal(res.body.error.code, 'PRODUCT_INACTIVE');
   });
 
-  // ----- Concurrency: 2 request cung eventId -----
-
-  await t.test('2 request song song cung eventId BOUGHT chi tao 1 edge', async () => {
-    // Re-active product1 de co the mua.
+  await t.test('two parallel BOUGHT requests with the same eventId create only one edge', async () => {
+    // Re-activate product1 so the purchase is allowed.
     await adminAgent.patch(`/api/products/${product1.productId}`).send({ active: true });
     const custAgent = request.agent(app);
     await custAgent.post('/api/auth/login').send({ email: customer.email, password: customer.password });
@@ -562,23 +585,23 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
         quantity: 1,
       }),
     ]);
-    // Ca hai phai thanh cong (201 hoac 200), khong 5xx, khong 409.
+    // Both must succeed (201 or 200), no 5xx, no 409.
     assert.ok([r1.status, r2.status].every((s) => s === 200 || s === 201), `Got ${r1.status}/${r2.status}`);
-    // DB chi co 1 edge.
+    // Database must contain exactly one BOUGHT edge.
     const check = await session.executeRead(async (tx) => tx.run(
       `MATCH ()-[r:BOUGHT { eventId: $eid }]->() RETURN count(r) AS c`,
       { eid: sharedEvt }
     ));
-    assert.equal(Number(check.records[0].get('c')), 1, 'Chi nen co 1 edge BOUGHT sau 2 request song song');
+    assert.equal(Number(check.records[0].get('c')), 1, 'Expected exactly 1 BOUGHT edge after the race');
   });
 
   // ----- History -----
 
-  await t.test('GET /api/me/history tra dung item theo type, pagination, sort', async () => {
+  await t.test('GET /api/me/history returns the right items by type, page, and sort', async () => {
     const custAgent = request.agent(app);
     await custAgent.post('/api/auth/login').send({ email: customer.email, password: customer.password });
 
-    // Tao them 1 VIEWED khac de co nhieu item
+    // Add another VIEWED so we have multiple items.
     const otherEvt = `${prefix}_EVT_VIEW_3`;
     await custAgent.post('/api/interactions/views').send({
       eventId: otherEvt,
@@ -594,9 +617,9 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
     assert.ok(allEvtIds.includes(viewEventId));
     assert.ok(allEvtIds.includes(otherEvt));
 
-    // Thứ tự thời gian giảm dần
+    // Newest first.
     for (let i = 1; i < all.body.items.length; i += 1) {
-      assert.ok(all.body.items[i - 1].occurredAt >= all.body.items[i].occurredAt, 'Phai sap theo occurredAt DESC');
+      assert.ok(all.body.items[i - 1].occurredAt >= all.body.items[i].occurredAt, 'Must be sorted by occurredAt DESC');
     }
 
     // type=bought
@@ -615,21 +638,21 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
     assert.equal(bad.status, 400);
   });
 
-  await t.test('customer khong the doc history tai khoan khac (khong co endpoint)', async () => {
-    // /api/me/history chi su dung customerId tu session; khong co query customerId.
+  await t.test('customer cannot read another account history (no such endpoint)', async () => {
+    // /api/me/history always uses the customerId from the session;
+    // the customerId query parameter is ignored.
     const custAgent = request.agent(app);
     await custAgent.post('/api/auth/login').send({ email: customer.email, password: customer.password });
     const res = await custAgent.get('/api/me/history?customerId=ADMIN_001');
     assert.equal(res.status, 200);
-    // No body leakage: items chi cua chinh customer dang nhap.
+    // No leakage: items must all belong to the logged-in customer.
     const ids = res.body.items.map((i) => i.eventId);
-    // cac eventId trong test deu bat dau bang prefix
     for (const id of ids) {
       assert.ok(id.startsWith(prefix), `Leak: ${id}`);
     }
   });
 
-  await t.test('admin khong the goi interactions/history (403)', async () => {
+  await t.test('admin cannot call interactions/history (403)', async () => {
     const res1 = await adminAgent.post('/api/interactions/views').send({ eventId: 'EVT_ADMIN', productId: product1.productId });
     assert.equal(res1.status === 403 || res1.status === 401, true, `admin interactions = ${res1.status}`);
     const res2 = await adminAgent.get('/api/me/history');
@@ -638,7 +661,7 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
 
   // ----- GET /api/products phan trang & filter -----
 
-  await t.test('GET /api/products tra ve items + page + pageSize + total', async () => {
+  await t.test('GET /api/products returns items + page + pageSize + total', async () => {
     const res = await adminAgent.get('/api/products?page=1&pageSize=5');
     assert.equal(res.status, 200);
     assert.equal(res.body.page, 1);
@@ -646,8 +669,8 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
     assert.equal(typeof res.body.total, 'number');
   });
 
-  await t.test('GET /api/products includeInactive=true (admin) thay ca product inactive', async () => {
-    // product1 dang active=true (sau race test). Set inactive de kiem tra.
+  await t.test('GET /api/products includeInactive=true (admin) shows inactive products', async () => {
+    // product1 is currently active=true (after the race test). Flip to inactive.
     await adminAgent.patch(`/api/products/${product1.productId}`).send({ active: false });
     const custAgent = request.agent(app);
     await custAgent.post('/api/auth/login').send({ email: customer.email, password: customer.password });
@@ -660,7 +683,7 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
 
   // ----- 400 / 404 / 409 errors -----
 
-  await t.test('400 voi body khong hop dong; 404 voi id khong ton tai', async () => {
+  await t.test('400 on bad body, 404 on unknown id', async () => {
     const bad1 = await adminAgent.post('/api/products').send({ name: 'x', price: 1, categoryId: 'wrong-id' });
     assert.equal(bad1.status === 400 || bad1.status === 404, true);
 
@@ -673,9 +696,9 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
 
   // ----- Sanity cleanup check (de dam bao teardown xoa duoc) -----
 
-  await t.test('cleanup: khong con node fixture nao sau t.after', async () => {
-    // Cleanup o t.after se xoa, nhung test nay goi som de xac nhan prefix.
-    // Tranh o dia: khong assert 0 o day, chi assert prefix duoc danh dau.
+  await t.test('cleanup: no fixture node remains after t.after', async () => {
+    // t.after handles the actual cleanup; this test only confirms the
+    // prefix-scoped count is observable.
     const before = await countByPrefix(session, prefix);
     assert.ok(before >= 0);
   });

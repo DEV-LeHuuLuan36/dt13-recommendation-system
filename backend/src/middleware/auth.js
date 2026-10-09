@@ -1,12 +1,5 @@
-/**
- * Middleware xac thuc: dam bao session dang nhap, dong thoi doc lai role/active tu DB
- * de khong tin cookie cu (theo yeu cau cua PROMPT_GIAI_DOAN_2 muc 7).
- *
- * Tra ve middleware(req, res, next) neu OK; neu khong, se goi next voi loi.
- *
- * Su dung:
- *   app.get('/api/foo', requireAuth(neo4jClient), handler)
- */
+// Reads role/active from the DB on every request so a stale cookie or a
+// demoted/deleted account loses access immediately.
 export function requireAuth(neo4jClient) {
   return async function authMiddleware(req, res, next) {
     const session = req.session || {};
@@ -23,7 +16,7 @@ export function requireAuth(neo4jClient) {
         { customerId }
       );
       if (!res.records[0]) {
-        // Tai khoan da bi xoa. Huy phien.
+        // Account was deleted; drop the cookie.
         await destroySession(req);
         return next(Object.assign(new Error('Tai khoan khong ton tai'), { status: 401, code: 'AUTH_REQUIRED' }));
       }
@@ -44,9 +37,7 @@ export function requireAuth(neo4jClient) {
   };
 }
 
-/**
- * Middleware yeu cau role admin. Dat sau requireAuth.
- */
+// Place after requireAuth; rejects non-admin sessions.
 export function requireAdmin() {
   return function adminOnly(req, res, next) {
     if (!req.auth || req.auth.role !== 'admin') {
@@ -59,11 +50,6 @@ export function requireAdmin() {
 function destroySession(req) {
   return new Promise((resolve) => {
     if (!req.session) return resolve();
-    req.session.destroy((err) => {
-      if (err) {
-        // Bo qua; xoa cookie nhu fallback.
-      }
-      resolve();
-    });
+    req.session.destroy(() => resolve());
   });
 }

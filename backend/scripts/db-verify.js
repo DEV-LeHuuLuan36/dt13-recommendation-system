@@ -1,26 +1,14 @@
 #!/usr/bin/env node
 /**
- * `npm run db:verify` (Phase 6)
- *
- * Chi doc, exit != 0 neu vi pham cac rang buoc seed V1 (DT13_SEED_V1).
- *  - V1 scope: 105 Product / 55 customer role=customer / 1 admin / 6 Category /
- *    260 BOUGHT / 180 VIEWED / 105 BELONGS_TO.
- *  - V2 scope (DT13_SEED_V2): catalog + accounts + behaviors V2.
- *  - Tổng graph in ra để tham khảo (co the khac nếu co runtime CRUD ngoai seed).
- *  - Idempotency: hash V1 BOUGHT fingerprint khop.
- *
- * Khong in passwordHash, salt, secret.
+ * `npm run db:verify` — read-only seed invariant check. Exits non-zero on any
+ * mismatch in the V1, V2, or reference (CATALOG_REAL_120_V1) scopes. Total
+ * graph counts are reported for context and may differ when runtime CRUD rows
+ * exist. Never logs passwordHash, salt, or session secrets.
  */
 import { createHash } from 'node:crypto';
 import neo4j from 'neo4j-driver';
 import { loadConfig } from '../src/config.js';
 import { VERIFY } from '../src/cypher/queries.js';
-import {
-  PRODUCT_COUNT,
-  CUSTOMER_COUNT,
-  CATEGORY_COUNT,
-} from '../src/seed/generator.js';
-import { CATALOG_V2_COUNT } from '../src/seed/catalog-v2.js';
 
 const EXIT_OK = 0;
 const EXIT_FAIL = 1;
@@ -86,6 +74,34 @@ async function countsByTag(session) {
     CALL {
       MATCH (c:Category) RETURN count(c) AS totalCategory
     }
+    CALL {
+      MATCH (p:Product)
+        WHERE 'CATALOG_REAL_120_V1' IN coalesce(p.referenceCatalogTags, [])
+        RETURN count(p) AS refProduct
+    }
+    CALL {
+      MATCH (c:Customer)
+        WHERE c.role = 'customer'
+          AND 'CATALOG_REAL_120_V1' IN coalesce(c.referenceCatalogTags, [])
+        RETURN count(c) AS refCustomer
+    }
+    // BOUGHT/VIEWED that point at Reference products (filter by endpoint,
+    // not by edge tag, so existing DT13_CLEAN_V1 edges still match).
+    CALL {
+      MATCH ()-[r:BOUGHT]->(p:Product)
+        WHERE p.datasetTag = 'CATALOG_REAL_120_V1'
+        RETURN count(r) AS refBought
+    }
+    CALL {
+      MATCH ()-[r:VIEWED]->(p:Product)
+        WHERE p.datasetTag = 'CATALOG_REAL_120_V1'
+        RETURN count(r) AS refViewed
+    }
+    CALL {
+      MATCH (:Customer)-[r:BOUGHT]->(p:Product)
+        WHERE p.datasetTag = 'CATALOG_REAL_120_V1'
+        RETURN count(DISTINCT [coalesce(startNode(r).customerId, ''), endNode(r).productId]) AS refDistinctBoughtPairs
+    }
     RETURN *
   `));
   const rec = res.records[0];
@@ -103,6 +119,13 @@ async function countsByTag(session) {
       bought: Number(rec.get('v2Bought')),
       viewed: Number(rec.get('v2Viewed')),
       belongsTo: Number(rec.get('v2BelongsTo')),
+    },
+    ref: {
+      product: Number(rec.get('refProduct')),
+      customer: Number(rec.get('refCustomer')),
+      bought: Number(rec.get('refBought')),
+      viewed: Number(rec.get('refViewed')),
+      distinctBoughtPairs: Number(rec.get('refDistinctBoughtPairs')),
     },
     total: {
       customer: Number(rec.get('totalCustomer')),
@@ -130,13 +153,14 @@ async function main() {
   const errors = [];
   try {
     const counts = await countsByTag(session);
-    // V1 scope (idempotent)
+    // V1 scope: the legacy 100-product fixture was removed; this DB now only
+    // carries the 120-reference catalog. Expect zero rows for V1.
     const v1Expected = {
-      customer: CUSTOMER_COUNT + 1, // 55 customer + 1 admin
-      product: PRODUCT_COUNT,
-      bought: 260,
-      viewed: 180,
-      belongsTo: PRODUCT_COUNT,
+      customer: 0,
+      product: 0,
+      bought: 0,
+      viewed: 0,
+      belongsTo: 0,
     };
     log('V1 scope (DT13_SEED_V1):');
     for (const [k, v] of Object.entries(v1Expected)) {
@@ -146,13 +170,13 @@ async function main() {
       if (!ok) errors.push(`v1.${k}: ${actual} != ${v}`);
     }
 
-    // V2 scope (idempotent)
+    // V2 scope: the 150-product V2 catalog has been removed.
     const v2Expected = {
-      customer: 28, // 25 customer + 1 admin phu + 2 inactive
-      product: CATALOG_V2_COUNT,
-      bought: 907,
-      viewed: 650,
-      belongsTo: CATALOG_V2_COUNT,
+      customer: 0,
+      product: 0,
+      bought: 0,
+      viewed: 0,
+      belongsTo: 0,
     };
     log('V2 scope (DT13_SEED_V2):');
     for (const [k, v] of Object.entries(v2Expected)) {
@@ -162,14 +186,38 @@ async function main() {
       if (!ok) errors.push(`v2.${k}: ${actual} != ${v}`);
     }
 
-    log(`Tổng graph: ${JSON.stringify(counts.total)}`);
+    log(`graph totals: ${JSON.stringify(counts.total)}`);
 
-    // V1 invariants (Phase 2)
+    // Reference (CATALOG_REAL_120_V1) - the canonical catalog after V1/V2 removal.
+    // BOUGHT/VIEWED totals reflect the current state of the graph; only the
+    // catalog coverage (120 products, 60 customers) is a hard invariant.
+    // Some customers buy the same product multiple times in the source data
+    // (different eventId per purchase), so the distinct (customer, product)
+    // pair count is normally lower than the total BOUGHT event count.
+    const refExpected = {
+      product: 120,
+      customer: 60,
+      bought: 372,
+      viewed: 360,
+      distinctBoughtPairs: 360,
+    };
+    log('Reference scope (CATALOG_REAL_120_V1):');
+    for (const [k, v] of Object.entries(refExpected)) {
+      const actual = counts.ref[k];
+      const ok = actual === v;
+      log(`  ref.${k}: ${actual} (expected ${v}) ${ok ? 'OK' : 'MISMATCH'}`);
+      if (!ok) errors.push(`ref.${k}: ${actual} != ${v}`);
+    }
+
+    // V1 invariants (Phase 2) - V1 has been removed; everything should be 0.
     const distinctPairs = await scalar(session, VERIFY.distinctBoughtPairs);
-    log(`distinctBoughtPairs (V1 only): ${distinctPairs} (expected 259)`);
-    if (distinctPairs !== 259) errors.push(`distinctBoughtPairs: ${distinctPairs} != 259`);
+    log(`distinctBoughtPairs (V1 only): ${distinctPairs} (expected 0)`);
+    if (distinctPairs !== 0) errors.push(`distinctBoughtPairs (V1): ${distinctPairs} != 0`);
 
     const fixtureRes = await session.executeRead(async (tx) => tx.run(VERIFY.fixtureGroup));
+    // V1 fixture customers (CUST_001..005) no longer exist after V1 removal;
+    // any record returned with an empty products list is OK because the
+    // customer itself is absent.
     const expectedByCid = {
       CUST_001: new Set(['PROD_001', 'PROD_002']),
       CUST_002: new Set(['PROD_001', 'PROD_002', 'PROD_003']),
@@ -184,10 +232,12 @@ async function main() {
       const set = new Set(prods);
       const exp = expectedByCid[cid];
       if (!exp) continue;
+      // OPTIONAL MATCH returns empty set for missing customers; treat that as OK.
+      if (set.size === 0) continue;
       const same = set.size === exp.size && [...exp].every((p) => set.has(p));
       if (!same) { errors.push(`Fixture ${cid}: got ${[...set].sort()} expected ${[...exp].sort()}`); fixtureOk = false; }
     }
-    log(`Fixture A..E: ${fixtureOk ? 'OK' : 'MISMATCH'}`);
+    log(`Fixture A..E: ${fixtureOk ? 'OK' : 'MISMATCH'} (V1 fixture customers removed)`);
 
     const groupAViolations = await scalar(session, VERIFY.groupABoughtAllows);
     if (groupAViolations > 0) errors.push(`group A-D bought P1..P4 only: violations=${groupAViolations}`);
@@ -237,9 +287,11 @@ async function main() {
     }
     log(`admin behaviors (detail): ${adminBehRes.records.length} (expected 0)`);
 
-    // V1 BOUGHT fingerprint (idempotency)
+    // Idempotency fingerprint: hash every Reference BOUGHT
+    // eventId/unitPrice/purchasedAt in order to detect accidental churn.
     const fpRes = await session.executeRead(async (tx) => tx.run(`
-      MATCH ()-[r:BOUGHT { datasetTag: 'DT13_SEED_V1' }]->()
+      MATCH (c:Customer)-[r:BOUGHT]->(p:Product)
+      WHERE p.datasetTag = 'CATALOG_REAL_120_V1'
       RETURN r.eventId AS eventId, r.unitPrice AS unitPrice, r.purchasedAt AS purchasedAt
       ORDER BY r.eventId
     `));
@@ -248,11 +300,10 @@ async function main() {
       h.update(`${r.get('eventId')}|${r.get('unitPrice')}|${r.get('purchasedAt') ? r.get('purchasedAt').toString() : ''}\n`);
     }
     const digest = h.digest('hex');
-    log(`V1 BOUGHT fingerprint: ${digest}`);
+    log(`Reference BOUGHT fingerprint: ${digest}`);
 
-    log(`V1 dataset target: ${PRODUCT_COUNT + CUSTOMER_COUNT + 1 + CATEGORY_COUNT} nodes, ${260 + 180 + PRODUCT_COUNT} edges (chi seed V1)`);
-    log(`V2 dataset target: ${CATALOG_V2_COUNT + 28 + CATEGORY_COUNT} nodes, ${907 + 650 + CATALOG_V2_COUNT} edges (chi seed V2)`);
-    log(`Tong graph (co the khac neu co CRUD ngoai seed): ${JSON.stringify(counts.total)}`);
+    log(`Reference dataset target: 120 products, 60 customers, 6 categories, 120 BELONGS_TO`);
+    log(`Graph total: ${JSON.stringify(counts.total)}`);
 
     try {
       const cres = await session.executeRead(async (tx) => tx.run(VERIFY.showConstraints));
@@ -260,7 +311,7 @@ async function main() {
       log(`Constraints: ${names.length} (${names.join(', ')})`);
       if (names.length < 6) errors.push(`Constraints: ${names.length} < 6`);
     } catch (err) {
-      log(`SHOW CONSTRAINTS khong kha dung: ${err.message.split('\n')[0]}`);
+      log(`SHOW CONSTRAINTS not available: ${err.message.split('\n')[0]}`);
     }
   } catch (err) {
     logErr(`FAIL: ${err.message.split('\n')[0]}`);
