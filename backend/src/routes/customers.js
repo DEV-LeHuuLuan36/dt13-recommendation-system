@@ -18,9 +18,10 @@ import {
 import { generateId, PREFIX } from '../lib/ids.js';
 import { hashPassword } from '../password.js';
 import { publicCustomer, paginated } from '../lib/mappers.js';
+import { getCustomerDefaultPassword } from '../seed/generator.js';
 
 const CUSTOMER_BODY_FIELDS = ['name', 'email', 'password', 'active'];
-const CUSTOMER_PATCH_FIELDS = ['name', 'email', 'active'];
+const CUSTOMER_PATCH_FIELDS = ['name', 'email', 'active', 'password'];
 
 export function createCustomersRouter({ neo4jClient }) {
   const router = Router();
@@ -85,11 +86,12 @@ export function createCustomersRouter({ neo4jClient }) {
       const body = pickAllowed(req.body, CUSTOMER_BODY_FIELDS);
       const name = validateName(body.name, 'name');
       const email = validateEmail(body.email);
-      const password = validatePassword(body.password);
       const active = body.active === undefined ? true : validateBoolean(body.active, 'active');
-
       const customerId = generateId(PREFIX.customer);
-      const passwordHash = await hashPassword(password);
+      const plainPassword = (body.password !== undefined && body.password !== '')
+        ? validatePassword(body.password)
+        : getCustomerDefaultPassword(customerId, 'customer');
+      const passwordHash = await hashPassword(plainPassword);
 
       const created = await runInTransaction(neo4jClient, async (tx) => {
         // Dam bao email chua ton tai (case-insensitive)
@@ -152,11 +154,18 @@ export function createCustomersRouter({ neo4jClient }) {
         }
         if (body.active !== undefined) nextActive = validateBoolean(body.active, 'active');
 
+        let nextPasswordHash = null;
+        if (body.password !== undefined && body.password !== '') {
+          const validPass = validatePassword(body.password);
+          nextPasswordHash = await hashPassword(validPass);
+        }
+
         await tx.run(CRUD.updateCustomer, {
           customerId,
           name: nextName,
           email: nextEmail,
           active: nextActive,
+          passwordHash: nextPasswordHash,
         });
         const after = await tx.run(CRUD.getCustomerByIdAdmin, { customerId });
         return publicCustomer(after.records[0].get('c'));

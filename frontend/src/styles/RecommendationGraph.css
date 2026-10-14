@@ -1,58 +1,79 @@
-.admin-graph__form {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px;
-  align-items: end;
-}
-
+/* Recommendation Graph Styling */
 .admin-graph__layout {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 
-.admin-graph__graph {
-  grid-column: 1 / -1;
+.admin-graph__items,
+.admin-graph__contrib {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
 }
 
 .admin-graph__items h3,
 .admin-graph__graph h3,
 .admin-graph__contrib h3 {
   font-size: 1rem;
-  margin: 0 0 8px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+
+/* SVG Canvas Container */
+.admin-graph__canvas-wrap {
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: #ffffff;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);
 }
 
 .admin-graph__svg {
   width: 100%;
-  max-width: 760px;
   height: auto;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  background: #f8fafc;
+  max-height: 520px;
   display: block;
 }
 
+.graph-node-group {
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.graph-node-group:hover circle {
+  stroke: var(--primary);
+  stroke-width: 3.5;
+}
+
+/* Legend */
 .admin-graph__legend {
   list-style: none;
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 8px;
-  padding: 0;
+  gap: 16px;
+  margin-top: 14px;
+  padding: 10px 14px;
+  background: var(--surface-raised);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light);
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+.admin-graph__legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .admin-graph__legend .dot {
   display: inline-block;
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
-  margin-right: 4px;
-  vertical-align: middle;
-}
-
-@media (max-width: 720px) {
-  .admin-graph__layout {
-    grid-template-columns: 1fr;
-  }
+  border: 1px solid rgba(0, 0, 0, 0.1);
 }

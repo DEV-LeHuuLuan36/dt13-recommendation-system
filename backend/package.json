@@ -15,6 +15,7 @@
     "db:verify": "node scripts/db-verify.js",
     "db:verify:clean": "node scripts/db-verify-clean.js",
     "db:seed:reference": "node scripts/db-seed-reference.js",
+    "db:reset": "node scripts/db-reset.js",
     "test": "node --test --test-concurrency=1 --test-force-exit --test-reporter=spec \"test/**/*.test.js\"",
     "profile:recommendations": "node scripts/profile-recommendations.js",
     "benchmark:recommendations": "node scripts/benchmark-recommendations.js"

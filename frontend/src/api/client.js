@@ -100,12 +100,16 @@ export const api = {
   recommendForMe(params = {}) {
     const qs = new URLSearchParams();
     if (params.limit) qs.set('limit', String(params.limit));
+    if (params.formula) qs.set('formula', String(params.formula));
+    if (params.includeViews) qs.set('includeViews', String(params.includeViews));
     const suffix = qs.toString() ? `?${qs.toString()}` : '';
     return request(`/api/recommendations/me${suffix}`);
   },
   recommendForProduct(productId, params = {}) {
     const qs = new URLSearchParams();
     if (params.limit) qs.set('limit', String(params.limit));
+    if (params.formula) qs.set('formula', String(params.formula));
+    if (params.includeViews) qs.set('includeViews', String(params.includeViews));
     const suffix = qs.toString() ? `?${qs.toString()}` : '';
     return request(`/api/recommendations/products/${encodeURIComponent(productId)}${suffix}`);
   },
@@ -120,4 +124,10 @@ export const api = {
     const suffix = qs.toString() ? `?${qs.toString()}` : '';
     return request(`/api/analytics/recommendation-graph${suffix}`);
   },
+  getGraphRecommendation(params = {}) {
+    return this.recommendationGraph(params);
+  },
 };
+
+export const getGraphRecommendation = (params = {}) => api.recommendationGraph(params);
+export const recommendationGraph = (params = {}) => api.recommendationGraph(params);

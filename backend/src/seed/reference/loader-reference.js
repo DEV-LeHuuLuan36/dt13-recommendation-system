@@ -20,9 +20,10 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 
 import { hashPassword } from '../../password.js';
+import { getCustomerDefaultPassword, getDeterministicSalt } from '../generator.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -53,8 +54,9 @@ export function loadReferenceDataset() {
   const integrity = JSON.parse(readFileSync(integrityPath, 'utf8'));
   const expectedHash = integrity && integrity.sha256;
   if (expectedHash) {
-    // SHA256 cua raw bytes (khong qua JSON.parse/stringify de tranh khoang trang/format khac).
-    const computed = createHash('sha256').update(rawText, 'utf8').digest('hex');
+    // SHA256 cua raw bytes (chuan hoa CRLF -> LF de nhat quan giua Windows va Linux).
+    const normalized = rawText.replace(/\r\n/g, '\n');
+    const computed = createHash('sha256').update(normalized, 'utf8').digest('hex');
     if (computed !== expectedHash) {
       throw new Error(`catalog-reference.json khong khop checksum: ${computed} != ${expectedHash}`);
     }
@@ -85,17 +87,13 @@ export async function generateReferenceCredentials({ logger = () => {} } = {}) {
   const data = loadReferenceDataset();
   const out = new Map();
   for (const c of data.customers) {
-    const plain = generateReferencePassword();
-    const hash = await hashPassword(plain);
+    const plain = getCustomerDefaultPassword(c.customerId, c.role);
+    const salt = getDeterministicSalt(c.customerId);
+    const hash = await hashPassword(plain, { salt });
     out.set(c.customerId, { password: plain, hash });
   }
   logger(`generated ${out.size} reference customer credentials (khong in ra log hay report)`);
   return out;
-}
-
-function generateReferencePassword() {
-  // 16 ky tu alphanumeric, khong ky tu dac biet (giong V2 generator).
-  return randomBytes(12).toString('base64').replace(/[+/=]/g, '').slice(0, 16);
 }
 
 /**
@@ -204,6 +202,7 @@ export async function runReferenceInTransaction(session, data, credentials, opti
            c.datasetTag = $tag,
            c.cohort = $cohort
          SET
+           c.passwordHash = $passwordHash,
            c.referenceCatalogTags = CASE
              WHEN $tag IN coalesce(c.referenceCatalogTags, []) THEN c.referenceCatalogTags
              ELSE coalesce(c.referenceCatalogTags, []) + [$tag]

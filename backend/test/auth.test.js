@@ -8,8 +8,9 @@ import { hashPassword } from '../src/password.js';
 const VALID_SECRET = 'a-test-secret-for-supertest-auth';
 
 async function buildFixture() {
-  const adminHash = await hashPassword('admin-secret-001');
-  const customerHash = await hashPassword('cust-secret-001');
+  const adminHash = await hashPassword('Admin@001');
+  const cust001Hash = await hashPassword('Cust@001');
+  const cust002Hash = await hashPassword('Cust@002');
   const customers = [
     {
       customerId: 'ADMIN_001',
@@ -25,7 +26,7 @@ async function buildFixture() {
       email: 'cust001@example.test',
       role: 'customer',
       active: true,
-      passwordHash: customerHash,
+      passwordHash: cust001Hash,
     },
     {
       customerId: 'CUST_002',
@@ -33,7 +34,7 @@ async function buildFixture() {
       email: 'inactive@example.test',
       role: 'customer',
       active: false,
-      passwordHash: customerHash,
+      passwordHash: cust002Hash,
     },
   ];
   const adapter = createInMemoryAdapter({ customers });
@@ -48,7 +49,7 @@ function login(agent, email, password) {
 test('POST /api/auth/login succeeds with normalized email (case + whitespace)', async () => {
   const { app } = await buildFixture();
   const agent = request.agent(app);
-  const res = await login(agent, '  Cust001@Example.test  ', 'cust-secret-001');
+  const res = await login(agent, '  Cust001@Example.test  ', 'Cust@001');
   assert.equal(res.status, 200);
   assert.equal(res.body.status, 'ok');
   assert.equal(res.body.profile.customerId, 'CUST_001');
@@ -77,7 +78,7 @@ test('POST /api/auth/login fails for unknown email -> 401 (generic message)', as
 
 test('POST /api/auth/login for inactive account -> 403', async () => {
   const { app } = await buildFixture();
-  const res = await request(app).post('/api/auth/login').send({ email: 'inactive@example.test', password: 'cust-secret-001' });
+  const res = await request(app).post('/api/auth/login').send({ email: 'inactive@example.test', password: 'Cust@002' });
   assert.equal(res.status, 403);
   assert.equal(res.body.error.code, 'ACCOUNT_INACTIVE');
 });
@@ -102,7 +103,7 @@ test('GET /api/auth/me 401 when not logged in', async () => {
 test('GET /api/auth/me returns profile after login (cookie reuse)', async () => {
   const { app } = await buildFixture();
   const agent = request.agent(app);
-  await login(agent, 'admin@example.test', 'admin-secret-001');
+  await login(agent, 'admin@example.test', 'Admin@001');
   const res = await agent.get('/api/auth/me');
   assert.equal(res.status, 200);
   assert.equal(res.body.profile.customerId, 'ADMIN_001');
@@ -112,7 +113,7 @@ test('GET /api/auth/me returns profile after login (cookie reuse)', async () => 
 test('POST /api/auth/logout returns 204, clears cookie; subsequent /me is 401', async () => {
   const { app } = await buildFixture();
   const agent = request.agent(app);
-  await login(agent, 'admin@example.test', 'admin-secret-001');
+  await login(agent, 'admin@example.test', 'Admin@001');
   const out = await agent.post('/api/auth/logout');
   assert.equal(out.status, 204);
   const setCookie = out.headers['set-cookie'] || [];
@@ -131,7 +132,7 @@ test('GET /api/analytics/graph-stats 401 when not logged in', async () => {
 test('GET /api/analytics/graph-stats 403 for customers', async () => {
   const { app } = await buildFixture();
   const agent = request.agent(app);
-  await login(agent, 'cust001@example.test', 'cust-secret-001');
+  await login(agent, 'cust001@example.test', 'Cust@001');
   const res = await agent.get('/api/analytics/graph-stats');
   assert.equal(res.status, 403);
   assert.equal(res.body.error.code, 'ADMIN_REQUIRED');
@@ -140,7 +141,7 @@ test('GET /api/analytics/graph-stats 403 for customers', async () => {
 test('GET /api/analytics/graph-stats 200 for admins', async () => {
   const { app } = await buildFixture();
   const agent = request.agent(app);
-  await login(agent, 'admin@example.test', 'admin-secret-001');
+  await login(agent, 'admin@example.test', 'Admin@001');
   const res = await agent.get('/api/analytics/graph-stats');
   assert.equal(res.status, 200);
   assert.equal(typeof res.body.customerNodes, 'number');
@@ -152,7 +153,7 @@ test('Smoke: /me reports the correct role/customerId for an admin session', asyn
   // Here we only verify the session payload reflects what was returned at login.
   const { app } = await buildFixture();
   const agent = request.agent(app);
-  await login(agent, 'admin@example.test', 'admin-secret-001');
+  await login(agent, 'admin@example.test', 'Admin@001');
   const me1 = await agent.get('/api/auth/me');
   assert.equal(me1.body.profile.role, 'admin');
   assert.equal(me1.body.profile.customerId, 'ADMIN_001');

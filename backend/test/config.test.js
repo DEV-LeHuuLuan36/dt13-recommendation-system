@@ -12,6 +12,31 @@ const __dirname = path.dirname(__filename);
 const fixturesDir = path.resolve(__dirname, 'fixtures-env');
 const fixtureEnv = path.join(fixturesDir, '.env');
 
+test.before(() => {
+  if (!fs.existsSync(fixturesDir)) {
+    fs.mkdirSync(fixturesDir, { recursive: true });
+  }
+  const content = [
+    '# Test fixture env',
+    'PORT=4002',
+    'NEO4J_URI=bolt://127.0.0.1:7687',
+    'NEO4J_USERNAME=neo4j',
+    'NEO4J_PASSWORD="secret-from-file"',
+    'NEO4J_DATABASE=neo4j',
+    '',
+  ].join('\n');
+  fs.writeFileSync(fixtureEnv, content, 'utf8');
+});
+
+test.after(() => {
+  try {
+    if (fs.existsSync(fixtureEnv)) fs.unlinkSync(fixtureEnv);
+    if (fs.existsSync(fixturesDir)) fs.rmdirSync(fixturesDir);
+  } catch {
+    // Ignore cleanup error
+  }
+});
+
 test('loadConfig returns defaults when env is empty (no .env file present)', () => {
   // Use a temp dir without .env to verify the "missing file" path.
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dt13-cfg-'));

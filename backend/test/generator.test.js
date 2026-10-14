@@ -133,3 +133,15 @@ test('viewed eventIds are unique', () => {
   const ids = new Set(ds.viewed.map((e) => e.eventId));
   assert.equal(ids.size, ds.viewed.length);
 });
+
+test('customers have unique individual passwords (no shared demo passwords)', () => {
+  const ds = generateSeedDataset();
+  const passwords = new Set(ds.customers.map((c) => c.password));
+  assert.equal(passwords.size, ds.customers.length);
+  const admin = ds.customers.find((c) => c.customerId === 'ADMIN_001');
+  assert.equal(admin.password, 'Admin@001');
+  const c1 = ds.customers.find((c) => c.customerId === 'CUST_001');
+  assert.equal(c1.password, 'Cust@001');
+  const c55 = ds.customers.find((c) => c.customerId === 'CUST_055');
+  assert.equal(c55.password, 'Cust@055');
+});

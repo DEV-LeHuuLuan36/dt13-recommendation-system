@@ -70,16 +70,27 @@ function toIntParam(n) {
   return neo4j.int(n);
 }
 
-function recordToItem(record, reasonFor) {
-  return {
+function recordToItem(record, reasonFor, isWeighted = false) {
+  const item = {
     productId: record.get('productId'),
     name: record.get('name'),
     price: toNumber(record.get('price')),
     imageUrl: record.get('imageUrl'),
     score: toNumber(record.get('score')),
     support: toNumber(record.get('support')),
-    reason: reasonFor(record.get('support'), toNumber(record.get('score'))),
   };
+  if (isWeighted) {
+    const boughtCount = toNumber(record.get('boughtCount')) || 0;
+    const viewedCount = toNumber(record.get('viewedCount')) || 0;
+    item.boughtCount = boughtCount;
+    item.viewedCount = viewedCount;
+    item.boughtWeight = boughtCount * 3.0;
+    item.viewedWeight = viewedCount * 1.0;
+    item.reason = reasonForWeighted(boughtCount, viewedCount, item.score, item.support);
+  } else {
+    item.reason = reasonFor(record.get('support'), toNumber(record.get('score')));
+  }
+  return item;
 }
 
 function reasonForMe(support, score) {
@@ -97,10 +108,19 @@ function reasonForCoBought(support) {
   return `${ngMua} da mua san pham dang xem va cung da mua san pham nay.`;
 }
 
+function reasonForWeighted(boughtCount, viewedCount, score, support) {
+  const parts = [];
+  if (boughtCount > 0) parts.push(`${boughtCount} nguoi mua (x3.0 = ${boughtCount * 3}d)`);
+  if (viewedCount > 0) parts.push(`${viewedCount} luot xem (x1.0 = ${viewedCount * 1}d)`);
+  if (parts.length === 0) return 'Goi y da hanh vi (mua x3.0 + xem x1.0).';
+  return `Goi y da hanh vi: ${parts.join(', ')}. Tong diem: ${score} (Do ho tro: ${support}).`;
+}
+
 export function createRecommendationsRouter({ neo4jClient }) {
   const router = Router();
 
   // GET /api/recommendations/me — user_cf over the customer's purchase history.
+  // Supports ?formula=weighted or ?includeViews=true for multi-behavior recommendation.
   router.get(
     '/me',
     asyncHandler(async (req, res) => {
@@ -108,10 +128,12 @@ export function createRecommendationsRouter({ neo4jClient }) {
       requireCustomerRole(req);
       const customerId = req.auth.customerId;
       const limit = parseLimit(req.query.limit);
+      const isWeighted = req.query.formula === 'weighted' || req.query.includeViews === 'true';
+      const query = isWeighted ? QUERIES.recommendForMeWeighted : QUERIES.recommendForMe;
 
       let result;
       try {
-        result = await runRead(neo4jClient, QUERIES.recommendForMe, {
+        result = await runRead(neo4jClient, query, {
           customerId,
           limit: toIntParam(limit),
         });
@@ -123,29 +145,35 @@ export function createRecommendationsRouter({ neo4jClient }) {
         });
       }
 
-      const items = (result.records || []).map((r) => recordToItem(r, reasonForMe));
+      const items = (result.records || []).map((r) => recordToItem(r, reasonForMe, isWeighted));
       const body = {
-        method: 'user_cf',
+        method: isWeighted ? 'user_cf_weighted' : 'user_cf',
+        ...(isWeighted ? { formula: 'score = 3.0 * boughtCount + 1.0 * viewedCount' } : {}),
         limit,
         items,
         reason: items.length === 0
-          ? 'Chua co san pham phu hop tu lich su mua hien tai.'
-          : 'Goi y tu lich su mua va nhung nguoi co san pham mua chung.',
+          ? (isWeighted
+            ? 'Chua co san pham phu hop tu lich su mua va xem hien tai.'
+            : 'Chua co san pham phu hop tu lich su mua hien tai.')
+          : (isWeighted
+            ? 'Goi y da hanh vi ket hop mua (x3.0) va xem (x1.0) tu nhung nguoi tuong dong.'
+            : 'Goi y tu lich su mua va nhung nguoi co san pham mua chung.'),
       };
       return res.status(200).json(body);
     })
   );
 
-  // GET /api/recommendations/products/:productId — co_bought from the given source product.
-  // 404 if the source is missing or inactive.
+  // GET /api/recommendations/products/:productId (alias: /co-bought/:productId)
+  // co_bought from the given source product. 404 if source is missing or inactive.
   router.get(
-    '/products/:productId',
+    ['/products/:productId', '/co-bought/:productId'],
     asyncHandler(async (req, res) => {
       requireClient(neo4jClient);
       requireCustomerRole(req);
       const productId = validateId(req.params.productId, 'productId');
       const customerId = req.auth.customerId;
       const limit = parseLimit(req.query.limit);
+      const isWeighted = req.query.formula === 'weighted' || req.query.includeViews === 'true';
 
       let sourceResult;
       try {
@@ -165,9 +193,10 @@ export function createRecommendationsRouter({ neo4jClient }) {
         throw new NotFoundError('San pham khong ton tai hoac da ngung kinh doanh.', 'PRODUCT_NOT_FOUND');
       }
 
+      const query = isWeighted ? QUERIES.recommendForProductWeighted : QUERIES.recommendForProduct;
       let result;
       try {
-        result = await runRead(neo4jClient, QUERIES.recommendForProduct, {
+        result = await runRead(neo4jClient, query, {
           customerId,
           productId,
           limit: toIntParam(limit),
@@ -180,15 +209,64 @@ export function createRecommendationsRouter({ neo4jClient }) {
         });
       }
 
-      const items = (result.records || []).map((r) => recordToItem(r, reasonForCoBought));
+      const items = (result.records || []).map((r) => recordToItem(r, reasonForCoBought, isWeighted));
       const body = {
-        method: 'co_bought',
+        method: isWeighted ? 'co_bought_weighted' : 'co_bought',
+        ...(isWeighted ? { formula: 'score = 3.0 * boughtCount + 1.0 * viewedCount' } : {}),
         sourceProductId: productId,
         limit,
         items,
         reason: items.length === 0
-          ? 'Chua du lieu mua cung cho san pham nay.'
-          : 'Goi y tu nguoi mua san pham dang xem.',
+          ? (isWeighted
+            ? 'Chua co du lieu mua va xem cung cho san pham nay.'
+            : 'Chua du lieu mua cung cho san pham nay.')
+          : (isWeighted
+            ? 'Goi y da hanh vi tu nguoi mua san pham dang xem (mua x3.0 + xem x1.0).'
+            : 'Goi y tu nguoi mua san pham dang xem.'),
+      };
+      return res.status(200).json(body);
+    })
+  );
+
+  // GET /api/recommendations/user-feed/:customerId — direct feed for Word report demonstration
+  router.get(
+    '/user-feed/:customerId',
+    asyncHandler(async (req, res) => {
+      requireClient(neo4jClient);
+      const targetId = validateId(req.params.customerId, 'customerId');
+      if (req.auth.role !== 'admin' && req.auth.customerId !== targetId) {
+        throw new ForbiddenError('Ban khong co quyen xem goi y cua nguoi dung khac.', 'FORBIDDEN');
+      }
+      const limit = parseLimit(req.query.limit);
+      const isWeighted = req.query.formula === 'weighted' || req.query.includeViews === 'true';
+      const query = isWeighted ? QUERIES.recommendForMeWeighted : QUERIES.recommendForMe;
+
+      let result;
+      try {
+        result = await runRead(neo4jClient, query, {
+          customerId: targetId,
+          limit: toIntParam(limit),
+        });
+      } catch (err) {
+        const message = (err && err.message) ? String(err.message).split('\n')[0] : 'unknown';
+        throw Object.assign(new Error(`Loi CSDL khi goi y: ${message}`), {
+          status: 503,
+          code: 'NEO4J_UNAVAILABLE',
+        });
+      }
+
+      const items = (result.records || []).map((r) => recordToItem(r, reasonForMe, isWeighted));
+      const body = {
+        method: isWeighted ? 'user_cf_weighted' : 'user_cf',
+        targetCustomerId: targetId,
+        ...(isWeighted ? { formula: 'score = 3.0 * boughtCount + 1.0 * viewedCount' } : {}),
+        limit,
+        items,
+        reason: items.length === 0
+          ? 'Chua co san pham phu hop tu lich su mua hien tai.'
+          : (isWeighted
+            ? 'Goi y da hanh vi ket hop mua (x3.0) va xem (x1.0) tu nhung nguoi tuong dong.'
+            : 'Goi y tu lich su mua va nhung nguoi co san pham mua chung.'),
       };
       return res.status(200).json(body);
     })

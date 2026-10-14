@@ -1,27 +1,58 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api/client.js';
 import { formatVnd, formatDateTime } from '../utils/format.js';
 import { newEventId } from '../utils/eventId.js';
-import { setDocumentTitle, setMetaDescription } from '../utils/seo.js';
+import { getProductPlaceholderSvg, getProductImageUrl } from '../utils/imageFallback.js';
+import {
+  setCanonicalUrl,
+  setDocumentTitle,
+  setMetaDescription,
+  setMetaRobots,
+  setOpenGraph,
+  setProductDetailStructuredData,
+} from '../utils/seo.js';
 import Recommendations from './Recommendations.jsx';
 import '../styles/ProductDetail.css';
 
-function fallbackSvg(alt) {
-  const text = (alt || 'Sản phẩm').slice(0, 24);
-  return `data:image/svg+xml;utf8,${encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 360"><rect width="600" height="360" fill="#167d69"/><text x="300" y="200" text-anchor="middle" fill="white" font-family="sans-serif" font-size="40">${text}</text></svg>`
-  )}`;
-}
-
-function ProductImage({ src, alt }) {
+function MainProductImage({ src, alt, category, productId }) {
   const [errored, setErrored] = useState(false);
-  if (errored || !src) {
-    return <img className="product-detail__image" src={fallbackSvg(alt)} alt={alt || 'Sản phẩm'} width="600" height="360" />;
+  const resolvedUrl = useMemo(() => getProductImageUrl(productId, src), [productId, src]);
+  const fallback = useMemo(() => getProductPlaceholderSvg(category || alt, 600, 450), [category, alt]);
+
+  if (errored || !resolvedUrl) {
+    return (
+      <img
+        className="product-detail__image"
+        src={fallback}
+        alt={alt || 'Chi tiết sản phẩm'}
+        width="600"
+        height="450"
+      />
+    );
   }
-  return <img className="product-detail__image" src={src} alt={alt || 'Sản phẩm'} loading="eager" decoding="async" width="600" height="360" onError={() => setErrored(true)} />;
+
+  return (
+    <img
+      className="product-detail__image"
+      src={resolvedUrl}
+      alt={alt || 'Chi tiết sản phẩm'}
+      loading="eager"
+      fetchPriority="high"
+      decoding="async"
+      width="600"
+      height="450"
+      onError={() => setErrored(true)}
+    />
+  );
 }
 
-export default function ProductDetail({ productId, profile, onBack, onSelectProduct }) {
+export default function ProductDetail({
+  productId,
+  profile,
+  onBack,
+  onSelectProduct,
+  categories = [],
+}) {
   const [product, setProduct] = useState(null);
   const [status, setStatus] = useState({ kind: 'loading', error: null });
   const [purchase, setPurchase] = useState({ quantity: 1, pending: false, message: null, error: null });
@@ -34,14 +65,25 @@ export default function ProductDetail({ productId, profile, onBack, onSelectProd
   const isCustomer = profile && profile.role === 'customer';
 
   const fetchProduct = useCallback(async () => {
+    if (!productId) {
+      setStatus({ kind: 'error', error: 'Không tìm thấy thông tin mã sản phẩm hợp lệ.' });
+      setProduct(null);
+      return;
+    }
     setStatus({ kind: 'loading', error: null });
     try {
       const includeInactive = isAdmin;
       const p = await api.getProduct(productId, { includeInactive });
+      if (!p || !p.productId) {
+        setStatus({ kind: 'error', error: 'Sản phẩm không tồn tại hoặc đã ngừng kinh doanh.' });
+        setProduct(null);
+        return;
+      }
       setProduct(p);
       setStatus({ kind: 'ready', error: null });
     } catch (err) {
-      setStatus({ kind: 'error', error: err.message });
+      setStatus({ kind: 'error', error: err.message || 'Không thể tải thông tin sản phẩm.' });
+      setProduct(null);
     }
   }, [productId, isAdmin]);
 
@@ -54,29 +96,44 @@ export default function ProductDetail({ productId, profile, onBack, onSelectProd
     fetchProduct();
   }, [fetchProduct]);
 
+  // Find category name for SEO & Breadcrumbs
+  const currentCategory = useMemo(() => {
+    if (!product || !categories.length) return null;
+    return categories.find((c) => c.categoryId === product.categoryId) || null;
+  }, [product, categories]);
+
+  // Dynamic Technical SEO for Product Detail
   useEffect(() => {
     if (product) {
-      const title = `${product.name} - Gợi Ý`;
-      setDocumentTitle(title);
+      setDocumentTitle(product.name);
       const desc = product.description
         ? product.description.slice(0, 160)
-        : `${product.name} - ${formatVnd(product.price)} đ`;
+        : `${product.name} chính hãng tại DT13 Store. Giá bán: ${formatVnd(product.price)} đ. Đồ án NoSQL Neo4j.`;
       setMetaDescription(desc);
+      setMetaRobots('index, follow');
+      setCanonicalUrl();
+      setOpenGraph({
+        title: `${product.name} - DT13 Store`,
+        description: desc,
+        image: product.imageUrl,
+        type: 'product',
+      });
+      setProductDetailStructuredData(product, currentCategory?.name);
     } else {
-      setDocumentTitle('Chi tiết sản phẩm - Gợi Ý');
+      setDocumentTitle('Chi tiết sản phẩm');
     }
-  }, [product]);
+  }, [product, currentCategory]);
 
-  // Record one VIEWED event when a customer opens the detail view.
+  // Record one VIEWED interaction edge in Neo4j
   useEffect(() => {
     if (!isCustomer || !product || product.active === false) return undefined;
     if (viewRecordedRef.current) return undefined;
     const evt = newEventId('VIEWED');
     viewEventIdRef.current = evt;
     viewRecordedRef.current = true;
-    // A failed write is non-blocking for the page.
-    api.recordView({ eventId: evt, productId })
-      .catch(() => { /* ignored */ });
+    api.recordView({ eventId: evt, productId }).catch(() => {
+      /* non-blocking */
+    });
     return undefined;
   }, [isCustomer, product, productId]);
 
@@ -86,6 +143,7 @@ export default function ProductDetail({ productId, profile, onBack, onSelectProd
     setPurchase((p) => ({ ...p, pending: true, error: null, message: null }));
     const evt = purchasedEventId || newEventId('BOUGHT');
     setPurchasedEventId(evt);
+
     try {
       const res = await api.recordPurchase({
         eventId: evt,
@@ -95,7 +153,7 @@ export default function ProductDetail({ productId, profile, onBack, onSelectProd
       setPurchase((p) => ({
         ...p,
         pending: false,
-        message: `Đã ghi mua ${res.quantity} x ${formatVnd(res.unitPrice)} đ.`,
+        message: `Mua hàng thành công! Đã lưu cạnh :BOUGHT (${res.quantity} x ${formatVnd(res.unitPrice)} đ) vào Neo4j.`,
         error: null,
       }));
       setCoBoughtKey((k) => k + 1);
@@ -105,83 +163,200 @@ export default function ProductDetail({ productId, profile, onBack, onSelectProd
     }
   };
 
-  if (status.kind === 'loading') return <p className="muted" role="status">Đang tải…</p>;
   if (status.kind === 'error') {
     return (
-      <section className="product-detail" aria-label="Chi tiết sản phẩm">
-        <p className="error-text">Không tải được sản phẩm. Vui lòng thử lại.</p>
-        <button type="button" className="btn-ghost" onClick={onBack}>Quay lại</button>
-      </section>
+      <div className="product-detail-error" style={{ textAlign: 'center', padding: '60px 20px' }}>
+        <p className="error-text" style={{ fontSize: '1.125rem', marginBottom: '16px' }}>
+          {status.error || 'Không tải được sản phẩm.'}
+        </p>
+        <button type="button" className="btn-primary" onClick={onBack}>
+          ← Quay lại danh sách sản phẩm
+        </button>
+      </div>
     );
   }
-  if (!product) return null;
+
+  if (status.kind === 'loading' || !product) {
+    return (
+      <div className="product-detail-loading" role="status" style={{ textAlign: 'center', padding: '60px 20px' }}>
+        <div className="spinner" aria-hidden="true" />
+        <p className="muted">Đang tải thông tin sản phẩm…</p>
+      </div>
+    );
+  }
 
   return (
-    <section className="product-detail" aria-label="Chi tiết sản phẩm">
+    <div className="product-detail-page">
+      {/* Semantic Breadcrumbs */}
       <nav className="product-detail__breadcrumb" aria-label="Breadcrumb">
-        <a href="#products" onClick={(e) => { e.preventDefault(); onBack(); }}>Sản phẩm</a>
-        <span aria-hidden="true">/</span>
-        <span aria-current="page">{product.name}</span>
+        <ol className="breadcrumb-list">
+          <li className="breadcrumb-item">
+            <button type="button" className="breadcrumb-link" onClick={onBack}>
+              Cửa hàng
+            </button>
+          </li>
+          {currentCategory && (
+            <li className="breadcrumb-item">
+              <span className="breadcrumb-sep" aria-hidden="true">/</span>
+              <span className="breadcrumb-text">{currentCategory.name}</span>
+            </li>
+          )}
+          <li className="breadcrumb-item breadcrumb-item--current" aria-current="page">
+            <span className="breadcrumb-sep" aria-hidden="true">/</span>
+            <span className="breadcrumb-current-text">{product.name}</span>
+          </li>
+        </ol>
       </nav>
-      <div className="product-detail__grid">
-        <div className="product-detail__image-wrap">
-          <ProductImage src={product.imageUrl} alt={product.name} />
+
+      {/* Main Product Showcase: 2-column layout */}
+      <div className="product-detail__layout">
+        {/* Left Column: Product Image */}
+        <div className="product-detail__gallery">
+          <div className="product-detail__image-box">
+            <MainProductImage
+              src={product.imageUrl}
+              alt={product.name}
+              category={currentCategory?.name || product.categoryId || product.name}
+              productId={product.productId}
+            />
+            {product.brand && <span className="product-detail__brand-tag">{product.brand}</span>}
+          </div>
         </div>
+
+        {/* Right Column: Information & Purchase */}
         <div className="product-detail__info">
-          {product.brand && <p className="product-detail__brand">{product.brand}</p>}
-          <h1 className="product-detail__name">{product.name}</h1>
-          {product.model && <p className="muted">Mã: {product.model}</p>}
-          <p className="product-detail__price">{formatVnd(product.price)} đ</p>
-          {product.active === false && <p className="badge badge--warn">Sản phẩm đang ngừng kinh doanh</p>}
-          {product.description && <p className="product-detail__desc">{product.description}</p>}
-          {product.createdAt && (
-            <p className="muted small">Tạo lúc: {formatDateTime(product.createdAt)}</p>
+          <div className="product-detail__meta-top">
+            <span className="product-detail__sku">MÃ SẢN PHẨM: <strong>{product.productId}</strong></span>
+            {currentCategory && (
+              <span className="badge badge--primary">{currentCategory.name}</span>
+            )}
+            {product.active === false && (
+              <span className="badge badge--danger">Ngừng kinh doanh</span>
+            )}
+          </div>
+
+          {/* Single H1 on Product Detail view */}
+          <h1 className="product-detail__title">{product.name}</h1>
+
+          {product.brand && (
+            <div className="product-detail__brand-line">
+              Thương hiệu: <strong>{product.brand}</strong>
+            </div>
           )}
 
+          {/* Large Price Display */}
+          <div className="product-detail__price-box">
+            <span className="product-detail__price-val">{formatVnd(product.price)}</span>
+            <span className="product-detail__price-currency">₫</span>
+            <span className="product-detail__vat-tag">(Đã bao gồm VAT)</span>
+          </div>
+
+          {/* Description */}
+          <div className="product-detail__desc-box">
+            <h3 className="product-detail__desc-title">Mô tả sản phẩm:</h3>
+            <p className="product-detail__desc">
+              {product.description || 'Sản phẩm công nghệ cao cấp phân phối chính hãng tại DT13 Store với chính sách bảo hành 12 tháng.'}
+            </p>
+          </div>
+
+          {product.createdAt && (
+            <div className="product-detail__created small muted">
+              Ngày phát hành: {formatDateTime(product.createdAt)}
+            </div>
+          )}
+
+          {/* Purchase Form (Customer role only) */}
           {isCustomer && product.active !== false && (
-            <form className="purchase-form" onSubmit={onPurchase} aria-label="Mua mô phỏng">
-              <h2>Mua mô phỏng</h2>
-              <p className="muted">Ghi một BOUGHT. Retry cùng eventId trả về kết quả giống, không tạo giao dịch mới.</p>
-              <label className="purchase-form__quantity">
-                <span>Số lượng</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={1000}
-                  value={purchase.quantity}
-                  onChange={(e) => setPurchase((p) => ({ ...p, quantity: Number(e.target.value) }))}
-                  required
-                />
-              </label>
-              {purchase.error && <p className="error-text" role="alert">{purchase.error}</p>}
-              {purchase.message && <p className="success-text" role="status">{purchase.message}</p>}
-              <button type="submit" className="btn-primary purchase-form__submit" disabled={purchase.pending} aria-busy={purchase.pending}>
-                {purchase.pending ? 'Đang ghi…' : 'Mua ngay'}
-              </button>
-            </form>
+            <div className="product-detail__purchase-card">
+              <h2 className="product-detail__purchase-title">
+                <span aria-hidden="true">🛒</span> Đặt mua sản phẩm (Mô phỏng Giao dịch)
+              </h2>
+              <p className="muted small">
+                Thao tác mua sẽ tạo một cạnh <code>:BOUGHT</code> trong Neo4j. Hệ thống sẽ ngay lập tức tính toán lại gợi ý tương quan.
+              </p>
+
+              <form onSubmit={onPurchase} className="purchase-form">
+                <div className="purchase-form__row">
+                  <div className="purchase-form__quantity-wrap">
+                    <label htmlFor="buy-quantity" className="visually-hidden">Số lượng</label>
+                    <button
+                      type="button"
+                      className="quantity-btn"
+                      onClick={() => setPurchase((p) => ({ ...p, quantity: Math.max(1, p.quantity - 1) }))}
+                      disabled={purchase.quantity <= 1 || purchase.pending}
+                      aria-label="Giảm số lượng"
+                    >
+                      -
+                    </button>
+                    <input
+                      id="buy-quantity"
+                      type="number"
+                      min={1}
+                      max={100}
+                      className="quantity-input"
+                      value={purchase.quantity}
+                      onChange={(e) => setPurchase((p) => ({ ...p, quantity: Math.max(1, Number(e.target.value) || 1) }))}
+                      disabled={purchase.pending}
+                    />
+                    <button
+                      type="button"
+                      className="quantity-btn"
+                      onClick={() => setPurchase((p) => ({ ...p, quantity: p.quantity + 1 }))}
+                      disabled={purchase.pending}
+                      aria-label="Tăng số lượng"
+                    >
+                      +
+                    </button>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="btn-primary purchase-form__submit"
+                    disabled={purchase.pending}
+                    aria-busy={purchase.pending}
+                  >
+                    {purchase.pending ? 'Đang lưu Neo4j…' : 'Mua ngay (Ghi cạnh :BOUGHT)'}
+                  </button>
+                </div>
+
+                {purchase.error && (
+                  <div className="error-text" role="alert">
+                    {purchase.error}
+                  </div>
+                )}
+
+                {purchase.message && (
+                  <div className="success-text" role="status">
+                    <span aria-hidden="true">✓</span>
+                    <span>{purchase.message}</span>
+                  </div>
+                )}
+              </form>
+            </div>
           )}
 
           {isCustomer && product.active === false && (
-            <p className="muted">Sản phẩm đang ngừng kinh doanh, bạn không thể mua thêm.</p>
-          )}
-
-          {isAdmin && product.active === false && (
-            <p className="muted">Sản phẩm này đang ở trạng thái ngừng kinh doanh. Khách hàng sẽ không thấy trên trang chính.</p>
+            <div className="error-text">
+              Sản phẩm này hiện đang ngừng kinh doanh. Quý khách vui lòng tham khảo các gợi ý tương tự bên dưới.
+            </div>
           )}
         </div>
       </div>
 
+      {/* Frequently Co-Bought Recommendations (mode="product") */}
       {isCustomer && (
-        <Recommendations
-          key={`co-${productId}-${coBoughtKey}`}
-          mode="product"
-          productId={productId}
-          onSelectProduct={onSelectProduct}
-          refreshKey={coBoughtKey}
-          title="Thường được mua cùng"
-          maxItems={4}
-        />
+        <section className="product-detail__co-bought" aria-label="Sản phẩm thường được mua cùng">
+          <Recommendations
+            key={`co-${productId}-${coBoughtKey}`}
+            mode="product"
+            productId={productId}
+            onSelectProduct={onSelectProduct}
+            refreshKey={coBoughtKey}
+            title="Sản phẩm thường được mua cùng"
+            maxItems={4}
+          />
+        </section>
       )}
-    </section>
+    </div>
   );
 }

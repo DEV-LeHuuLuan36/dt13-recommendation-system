@@ -1,9 +1,15 @@
-export async function loginRequest(email, password) {
+export async function loginRequest(emailOrId, password) {
+  const trimmed = typeof emailOrId === 'string' ? emailOrId.trim() : '';
+  const isEmail = trimmed.includes('@');
+  const payload = isEmail
+    ? { email: trimmed, password }
+    : { customerId: trimmed, password };
+
   const res = await fetch('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'same-origin',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify(payload),
   });
   let body = null;
   try { body = await res.json(); } catch { /* noop */ }

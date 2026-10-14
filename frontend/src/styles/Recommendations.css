@@ -1,90 +1,512 @@
-.reco {
+/* Recommendations Block Styling */
+.reco-block {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 16px;
-  box-shadow: var(--shadow);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 18px;
+  margin-bottom: 24px;
+  position: relative;
 }
-.reco__header {
+
+/* Header */
+.reco-block__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-}
-.reco__title { font-size: 1.1rem; margin: 0; }
-.reco__why {
-  background: transparent;
-  color: var(--muted);
-  font-size: 13px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  min-height: 32px;
-}
-.reco__why:hover { color: var(--text); background: var(--selected); }
-.reco__why-text {
-  margin: 0;
-  font-size: 13px;
-  color: var(--muted);
-  background: var(--page);
-  padding: 8px 12px;
-  border-radius: 8px;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-light);
 }
 
-.reco__empty { margin: 0; }
-
-/* 4 the goi y tren desktop, 2 tren mobile */
-.reco__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.reco-block__title-wrap {
+  display: flex;
+  align-items: center;
   gap: 10px;
 }
-@media (min-width: 700px) { .reco__list { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (min-width: 1100px) { .reco__list { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 
-.reco__item {
-  background: var(--page);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-  min-width: 0;
+.reco-block__icon {
+  font-size: 1.5rem;
 }
-.reco__open {
+
+.reco-block__title {
+  font-size: 1.375rem;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
+
+.reco-block__neo4j-tag {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-purple-light);
+  color: var(--accent-purple);
+  border: 1px solid var(--accent-purple-border);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Controls */
+.reco-block__controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* Segmented Pill Control */
+.reco-segmented {
+  display: inline-flex;
+  background: var(--surface-raised);
+  padding: 3px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+}
+
+.reco-segmented__btn {
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.reco-segmented__btn:hover {
+  color: var(--text);
+}
+
+.reco-segmented__btn--active {
+  background: #ffffff;
+  color: var(--primary) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  font-weight: 700;
+}
+
+/* Inspector Drawer Toggle Button */
+.reco-inspector-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: var(--radius-pill);
+  background: #0f172a;
+  color: #f8fafc !important;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  font-family: monospace;
+  transition: all 0.15s ease;
+  box-shadow: var(--shadow-xs);
+}
+
+.reco-inspector-toggle:hover {
+  background: #1e293b;
+  transform: translateY(-1px);
+}
+
+.reco-inspector-toggle--active {
+  background: var(--primary) !important;
+}
+
+/* Developer Inspector Panel (Dark Technical Drawer) */
+.reco-developer-panel {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: var(--radius);
+  padding: 20px;
+  color: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: var(--shadow-md);
+  animation: panelSlide 0.2s ease;
+}
+
+@keyframes panelSlide {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.reco-developer-panel__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #1e293b;
+  padding-bottom: 12px;
+}
+
+.reco-developer-panel__badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #38bdf8;
+  font-family: monospace;
+}
+
+.reco-developer-panel__badge .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #38bdf8;
+  box-shadow: 0 0 8px #38bdf8;
+}
+
+.reco-developer-panel__hint {
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.reco-developer-panel__code {
+  background: #020617;
+  border: 1px solid #1e293b;
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  margin: 0;
+  font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: #e2e8f0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.reco-developer-panel__cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.reco-feature-card {
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  padding: 12px;
   display: flex;
   gap: 10px;
-  align-items: center;
-  padding: 8px 10px;
-  background: none;
-  text-align: left;
-  width: 100%;
-  min-height: 64px;
-  color: inherit;
-  border: none;
 }
-.reco__open:hover { background: var(--selected); }
-.reco__thumb {
-  width: 60px;
-  height: 44px;
-  object-fit: contain;
-  background: var(--surface);
-  border-radius: 4px;
-  flex-shrink: 0;
+
+.reco-feature-card__num {
+  font-size: 1.125rem;
+  font-weight: 800;
+  color: #38bdf8;
+  font-family: monospace;
+  line-height: 1;
 }
-.reco__body { min-width: 0; }
-.reco__brand { margin: 0; color: var(--muted); font-size: 12px; }
-.reco__name {
+
+.reco-feature-card__content strong {
+  display: block;
+  font-size: 0.8125rem;
+  color: #f8fafc;
+  margin-bottom: 4px;
+}
+
+.reco-feature-card__content p {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  line-height: 1.4;
   margin: 0;
-  font-size: 13px;
-  line-height: 1.3;
+}
+
+.reco-feature-card__content code {
+  color: #38bdf8;
+  font-family: monospace;
+}
+
+/* Reason Box */
+.reco-reason-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--primary-light);
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 0.875rem;
+  color: var(--primary-active);
+}
+
+.reco-reason-box__icon {
+  font-size: 1.125rem;
+}
+
+/* Empty State */
+.reco-empty-card {
+  text-align: center;
+  padding: 32px 16px;
+  background: var(--surface-raised);
+  border-radius: var(--radius-sm);
+}
+
+/* Carousel Nav Controls (Left & Right Arrow Buttons) */
+.reco-carousel-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-raised);
+  padding: 2px 6px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  margin-left: 4px;
+}
+
+.reco-carousel-nav__btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text);
+  background: #ffffff;
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+
+.reco-carousel-nav__btn:hover {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+  transform: scale(1.08);
+}
+
+.reco-carousel-nav__btn:active {
+  transform: scale(0.96);
+}
+
+.reco-carousel-nav__counter {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  font-family: monospace;
+  padding: 0 6px;
+  min-width: 38px;
+  text-align: center;
+}
+
+/* Horizontal Carousel Viewport & Track (Max 4 items on desktop) */
+.reco-carousel-container {
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.reco-carousel-viewport {
+  width: 100%;
+  overflow: hidden;
+}
+
+.reco-carousel-track {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
+  width: 100%;
+  animation: carouselFade 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes carouselFade {
+  from {
+    opacity: 0.6;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.reco-carousel-track--count-1 {
+  grid-template-columns: minmax(280px, 340px);
+}
+
+.reco-carousel-track--count-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.reco-carousel-track--count-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.reco-carousel-item {
+  width: 100%;
+  min-width: 0;
+}
+
+/* Fallback Uniform Grid for Recommendations */
+.reco-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 20px;
+  align-items: stretch;
+  width: 100%;
+}
+
+.reco-grid--count-1 {
+  grid-template-columns: minmax(280px, 400px);
+}
+
+.reco-grid--count-2 {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.reco-grid--count-3 {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+/* Reco Card */
+.reco-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow-xs);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.reco-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--accent-purple-border);
+}
+
+.reco-card__image-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  background: #f1f5f9;
+}
+
+.reco-card__image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.reco-card:hover .reco-card__image {
+  transform: scale(1.04);
+}
+
+/* Score Badge Overlay */
+.reco-card__score-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.4);
+}
+
+.reco-card__score-badge .support-val {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  opacity: 0.9;
+}
+
+.reco-card__body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.reco-card__brand {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.reco-card__name {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text);
+  margin-bottom: 8px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  min-height: 2.8em;
 }
-.reco__price { color: var(--primary); font-weight: 600; margin: 2px 0 0; font-size: 14px; }
+
+.reco-card__price {
+  font-size: 1.1875rem;
+  font-weight: 800;
+  color: var(--primary);
+  margin-bottom: 8px;
+}
+
+.reco-card__price .currency {
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.reco-card__detail-stats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  background: var(--surface-raised);
+  padding: 4px 8px;
+  border-radius: var(--radius-xs);
+  margin-bottom: 12px;
+}
+
+.reco-card__actions {
+  margin-top: auto;
+}
+
+.reco-card__btn {
+  width: 100%;
+  font-size: 0.875rem;
+  min-height: 38px;
+  background: linear-gradient(135deg, var(--primary) 0%, #1d4ed8 100%);
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .reco-carousel-track {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .reco-developer-panel__cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .reco-carousel-track {
+    grid-template-columns: 1fr;
+  }
+}

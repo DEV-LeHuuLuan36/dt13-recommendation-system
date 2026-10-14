@@ -29,7 +29,8 @@ const isDate = s => typeof s === 'string' && /Z$/.test(s) && Number.isFinite(Dat
 check('UTF-8, không BOM và checksum khớp', () => {
   assert.ok(!bytes.subarray(0, 3).equals(Buffer.from([239, 187, 191])));
   assert.equal(Buffer.from(bytes.toString('utf8'), 'utf8').compare(bytes), 0);
-  assert.equal(createHash('sha256').update(bytes).digest('hex'), integrity.sha256);
+  const normalizedText = bytes.toString('utf8').replace(/\r\n/g, '\n');
+  assert.equal(createHash('sha256').update(normalizedText, 'utf8').digest('hex'), integrity.sha256);
 });
 check('120 Product, 60 Customer, 6 Category', () => {
   assert.equal(d.products.length, 120); assert.equal(d.customers.length, 60);

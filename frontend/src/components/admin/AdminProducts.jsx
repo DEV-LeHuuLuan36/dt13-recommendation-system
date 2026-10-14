@@ -1,26 +1,187 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api/client.js';
 import { formatVnd } from '../../utils/format.js';
+import { getCategoryIconPaths, getProductImageUrl, RC_IMAGE_FILES } from '../../utils/imageFallback.js';
 import '../../styles/AdminCrud.css';
 
 const EMPTY_PRODUCT = {
+  productId: '',
   name: '',
   description: '',
   price: 0,
   categoryId: '',
-  imageUrl: '',
+  selectedImage: '',
   active: true,
 };
 
+function AdminProductThumb({ productId, src, alt, categoryId }) {
+  const [errored, setErrored] = useState(false);
+  const resolvedUrl = useMemo(() => {
+    return getProductImageUrl(productId, src) || (productId ? `/images/products/${productId.toLowerCase()}.jpg` : null);
+  }, [productId, src]);
+
+  if (errored || !resolvedUrl) {
+    return (
+      <div
+        className="admin-product-thumb admin-product-thumb--fallback"
+        title={alt || categoryId || productId}
+        dangerouslySetInnerHTML={{
+          __html: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none">${getCategoryIconPaths(categoryId || alt || productId)}</svg>`,
+        }}
+      />
+    );
+  }
+
+  return (
+    <div className="admin-product-thumb">
+      <img
+        src={resolvedUrl}
+        alt={alt || productId}
+        width="48"
+        height="48"
+        className="admin-product-thumb__img"
+        onError={() => setErrored(true)}
+      />
+    </div>
+  );
+}
+
+function ImagePickerGrid({ selectedUrl, onSelect, onResetAuto, autoUrl }) {
+  const [filterText, setFilterText] = useState('');
+  const [customInput, setCustomInput] = useState('');
+  const [showCustom, setShowCustom] = useState(false);
+
+  // Filter 120 image catalog
+  const filteredImages = useMemo(() => {
+    const list = Object.entries(RC_IMAGE_FILES).map(([sku, fn]) => ({
+      sku: sku.toUpperCase(),
+      fileName: fn,
+      url: `/images/products/${fn}`,
+    }));
+    if (!filterText.trim()) return list;
+    const q = filterText.toLowerCase().trim();
+    return list.filter((it) => it.sku.toLowerCase().includes(q) || it.fileName.toLowerCase().includes(q));
+  }, [filterText]);
+
+  return (
+    <div className="admin-image-picker">
+      <div className="admin-image-picker__header">
+        <div className="admin-image-picker__title-row">
+          <span className="admin-image-picker__title">
+            🖼️ Bảng chọn ảnh mẫu trực quan ({filteredImages.length} ảnh thực tế)
+          </span>
+          {onResetAuto && autoUrl && selectedUrl !== autoUrl && (
+            <button
+              type="button"
+              className="btn-ghost small"
+              onClick={onResetAuto}
+              title="Khôi phục ảnh tự động theo SKU"
+            >
+              ↺ Tự động theo SKU
+            </button>
+          )}
+        </div>
+
+        <div className="admin-image-picker__toolbar">
+          <input
+            type="search"
+            placeholder="Lọc ảnh theo SKU (ví dụ: P001, 015, 050)..."
+            value={filterText}
+            onChange={(e) => setFilterText(e.target.value)}
+            className="admin-image-picker__search"
+          />
+          <button
+            type="button"
+            className={`btn-ghost small${showCustom ? ' btn-ghost--active' : ''}`}
+            onClick={() => setShowCustom((v) => !v)}
+          >
+            {showCustom ? 'Ẩn URL ngoài' : '+ Nhập link ảnh tùy ý'}
+          </button>
+        </div>
+      </div>
+
+      {showCustom && (
+        <div className="admin-image-picker__custom-row">
+          <input
+            type="text"
+            placeholder="Nhập link ảnh https://... hoặc /images/products/..."
+            value={customInput}
+            onChange={(e) => setCustomInput(e.target.value)}
+            className="admin-image-picker__custom-input"
+          />
+          <button
+            type="button"
+            className="btn-primary small"
+            onClick={() => {
+              if (customInput.trim()) {
+                onSelect(customInput.trim());
+              }
+            }}
+          >
+            Áp dụng
+          </button>
+        </div>
+      )}
+
+      {/* Lưới thumbnail ảnh thực tế - Click trực tiếp để chọn */}
+      <div className="admin-image-picker__grid">
+        {filteredImages.map((img) => {
+          const isSelected = selectedUrl === img.url;
+          return (
+            <button
+              key={img.sku}
+              type="button"
+              className={`admin-image-picker__card${isSelected ? ' admin-image-picker__card--selected' : ''}`}
+              onClick={() => onSelect(img.url)}
+              title={`Click chọn ảnh: ${img.sku} (${img.fileName})`}
+            >
+              <img
+                src={img.url}
+                alt={img.sku}
+                loading="lazy"
+                width="60"
+                height="60"
+                className="admin-image-picker__img"
+              />
+              <span className="admin-image-picker__label">{img.sku}</span>
+              {isSelected && <span className="admin-image-picker__check" aria-hidden="true">✓</span>}
+            </button>
+          );
+        })}
+      </div>
+      <p className="admin-image-picker__hint">
+        💡 <strong>Mẹo:</strong> Nhấp trực tiếp vào ảnh thumbnail ở trên để gán ngay cho sản phẩm. Ảnh có viền xanh dương và dấu <strong>✓</strong> là ảnh đang được áp dụng.
+      </p>
+    </div>
+  );
+}
+
 function ProductForm({ initial, categories, onCancel, onSubmit, busy, error, title }) {
+  const isEdit = Boolean(initial?.productId);
   const [form, setForm] = useState(() => ({
+    productId: initial?.productId ?? '',
     name: initial?.name ?? '',
     description: initial?.description ?? '',
     price: initial?.price ?? 0,
     categoryId: initial?.categoryId ?? (categories[0]?.categoryId ?? ''),
-    imageUrl: initial?.imageUrl ?? '',
+    selectedImage: initial?.imageUrl || '',
     active: initial?.active ?? true,
   }));
+
+  const computedImageUrl = useMemo(() => {
+    if (form.selectedImage) return form.selectedImage;
+    const cleanId = String(form.productId || '').trim().toLowerCase();
+    if (cleanId) {
+      return getProductImageUrl(cleanId, '') || `/images/products/${cleanId}.jpg`;
+    }
+    return '';
+  }, [form.productId, form.selectedImage]);
+
+  const [previewError, setPreviewError] = useState(false);
+
+  useEffect(() => {
+    setPreviewError(false);
+  }, [computedImageUrl]);
 
   const onField = (k) => (e) => {
     const v = k === 'active' ? e.target.checked : e.target.value;
@@ -32,11 +193,35 @@ function ProductForm({ initial, categories, onCancel, onSubmit, busy, error, tit
       className="admin-form"
       onSubmit={(e) => {
         e.preventDefault();
-        onSubmit(form);
+        const payload = {
+          name: form.name,
+          description: form.description,
+          price: form.price,
+          categoryId: form.categoryId,
+          imageUrl: computedImageUrl || (form.productId ? `/images/products/${form.productId.toLowerCase()}.jpg` : null),
+          active: form.active,
+        };
+        if (!isEdit && form.productId) {
+          payload.productId = form.productId.trim().toUpperCase();
+        }
+        onSubmit(payload);
       }}
     >
       <h3>{title}</h3>
       {error && <p className="error-text">{error}</p>}
+      
+      {!isEdit && (
+        <label>
+          <span>Mã sản phẩm / SKU (Ví dụ: RC_P121 - hệ thống tự động liên kết ảnh)</span>
+          <input
+            value={form.productId}
+            onChange={onField('productId')}
+            placeholder="RC_P..."
+            maxLength={30}
+          />
+        </label>
+      )}
+
       <label>
         <span>Tên sản phẩm</span>
         <input value={form.name} onChange={onField('name')} required maxLength={200} />
@@ -65,10 +250,47 @@ function ProductForm({ initial, categories, onCancel, onSubmit, busy, error, tit
           ))}
         </select>
       </label>
-      <label>
-        <span>Đường dẫn ảnh (để trống để dùng ảnh mặc định)</span>
-        <input value={form.imageUrl || ''} onChange={onField('imageUrl')} placeholder="/images/products/..." />
-      </label>
+
+      {/* Khung Tự động liên kết và xem trước hình ảnh */}
+      <div className="admin-form-image-preview">
+        <div className="admin-form-image-preview__box">
+          {computedImageUrl && !previewError ? (
+            <img
+              src={computedImageUrl}
+              alt="Xem trước ảnh sản phẩm"
+              onError={() => setPreviewError(true)}
+            />
+          ) : (
+            <div
+              className="admin-product-thumb--fallback"
+              style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              dangerouslySetInnerHTML={{
+                __html: `<svg viewBox="0 0 24 24" width="32" height="32" fill="none">${getCategoryIconPaths(form.categoryId || form.name)}</svg>`,
+              }}
+            />
+          )}
+        </div>
+        <div className="admin-form-image-preview__meta">
+          <span className="admin-form-image-preview__title">Hình ảnh sản phẩm đang áp dụng:</span>
+          <span className="admin-form-image-preview__path">
+            {computedImageUrl || '(Chưa có ảnh - hệ thống tự động sinh theo SKU khi lưu)'}
+          </span>
+          <span className="muted" style={{ fontSize: '12px' }}>
+            {form.selectedImage
+              ? '✓ Đã chọn từ Bảng chọn ảnh mẫu bên dưới'
+              : (form.productId ? `✓ Tự động map theo SKU: ${form.productId.toUpperCase()}` : 'Hệ thống tự động liên kết ảnh chuẩn khi lưu')}
+          </span>
+        </div>
+      </div>
+
+      {/* BẢNG CHỌN ẢNH TRỰC QUAN (IMAGE PICKER GRID) - XÓA BỎ DROPDOWN TEXT THÔ */}
+      <ImagePickerGrid
+        selectedUrl={computedImageUrl}
+        autoUrl={form.productId ? (getProductImageUrl(form.productId, '') || `/images/products/${form.productId.toLowerCase()}.jpg`) : ''}
+        onSelect={(newUrl) => setForm((f) => ({ ...f, selectedImage: newUrl }))}
+        onResetAuto={() => setForm((f) => ({ ...f, selectedImage: '' }))}
+      />
+
       <label className="admin-form__inline">
         <input type="checkbox" checked={!!form.active} onChange={onField('active')} />
         <span>Đang kinh doanh</span>
@@ -117,6 +339,12 @@ export default function AdminProducts() {
   useEffect(() => {
     api.listCategories().then((d) => setCategories(d.items || [])).catch(() => {});
   }, []);
+
+  const categoryMap = useMemo(() => {
+    const map = new Map();
+    (categories || []).forEach((c) => map.set(c.categoryId, c.name));
+    return map;
+  }, [categories]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
@@ -214,8 +442,9 @@ export default function AdminProducts() {
         <table className="admin-table">
           <thead>
             <tr>
-              <th>Mã</th>
-              <th>Tên</th>
+              <th style={{ width: '60px' }}>Ảnh</th>
+              <th>Mã SKU</th>
+              <th>Tên sản phẩm</th>
               <th>Giá</th>
               <th>Danh mục</th>
               <th>Trạng thái</th>
@@ -223,33 +452,72 @@ export default function AdminProducts() {
             </tr>
           </thead>
           <tbody>
-            {items.map((p) => (
-              <tr key={p.productId}>
-                <td><code>{p.productId}</code></td>
-                <td>{p.name}</td>
-                <td>{formatVnd(p.price)} đ</td>
-                <td>{p.categoryId || '-'}</td>
-                <td>{p.active ? <span className="badge badge--primary">Đang KD</span> : <span className="badge badge--warn">Ngừng</span>}</td>
-                <td>
-                  <button type="button" className="btn-ghost" onClick={() => { setEditing(p); setCreating(false); setFormError(null); }}>Sửa</button>
-                  <button
-                    type="button"
-                    className="btn-danger"
-                    onClick={() => setConfirmDel(p)}
-                  >Xóa</button>
-                </td>
-              </tr>
-            ))}
+            {items.map((p) => {
+              const catName = categoryMap.get(p.categoryId);
+              return (
+                <tr key={p.productId}>
+                  <td>
+                    <AdminProductThumb
+                      productId={p.productId}
+                      src={p.imageUrl}
+                      alt={p.name}
+                      categoryId={p.categoryId}
+                    />
+                  </td>
+                  <td><code>{p.productId}</code></td>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <strong>{p.name}</strong>
+                    </div>
+                  </td>
+                  <td>{formatVnd(p.price)} đ</td>
+                  <td>
+                    <span className="admin-cat-text">
+                      {catName || p.categoryId || '—'}
+                    </span>
+                    {catName && p.categoryId && (
+                      <span className="muted small" style={{ display: 'block', fontSize: '11px' }}>
+                        <code>{p.categoryId}</code>
+                      </span>
+                    )}
+                  </td>
+                  <td>{p.active ? <span className="badge badge--primary">Đang KD</span> : <span className="badge badge--warn">Ngừng KD</span>}</td>
+                  <td>
+                    <button type="button" className="btn-ghost" onClick={() => { setEditing(p); setCreating(false); setFormError(null); }}>Sửa</button>
+                    <button
+                      type="button"
+                      className="btn-danger"
+                      onClick={() => setConfirmDel(p)}
+                    >Xóa</button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
 
       <footer className="admin-crud__footer">
-        <span className="muted">Tổng {total} sản phẩm</span>
+        <span className="muted small">Tổng số {total} sản phẩm</span>
         <div className="pagination">
-          <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>Trước</button>
-          <span>Trang {page} / {totalPages}</span>
-          <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>Sau</button>
+          <button
+            type="button"
+            className="pagination__btn"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+          >
+            ← Trước
+          </button>
+          <span className="pagination__current">{page}</span>
+          <span className="muted small">/ {totalPages}</span>
+          <button
+            type="button"
+            className="pagination__btn"
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages}
+          >
+            Sau →
+          </button>
         </div>
       </footer>
 

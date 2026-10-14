@@ -20,11 +20,13 @@ export function isValidPassword(plain) {
   return typeof plain === 'string' && plain.length >= 1 && plain.length <= 256;
 }
 
-export async function hashPassword(plain) {
+export async function hashPassword(plain, { salt: customSalt } = {}) {
   if (!isValidPassword(plain)) {
     throw new Error('Invalid password');
   }
-  const salt = randomBytes(SALT_BYTES);
+  const salt = customSalt
+    ? (Buffer.isBuffer(customSalt) ? customSalt : Buffer.from(customSalt))
+    : randomBytes(SALT_BYTES);
   const derived = await scrypt(plain, salt, HASH_BYTES, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P });
   return `${SCRYPT_PREFIX}$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$${salt.toString('base64')}$${derived.toString('base64')}`;
 }

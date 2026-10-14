@@ -5,12 +5,56 @@
  * tag every row it writes.
  */
 
+import { createHash } from 'node:crypto';
+import { hashPassword } from '../password.js';
+
 export const DATASET_MARKER = 'DT13_SEED_V1';
 
 export const CATEGORY_COUNT = 6;
 export const PRODUCT_COUNT = 105;
 export const CUSTOMER_COUNT = 55; // role=customer
 export const ADMIN_ID = 'ADMIN_001';
+
+/**
+ * Quy tac sinh mat khau mac dinh rieng biet cho tung user theo dinh danh ID.
+ */
+export function getCustomerDefaultPassword(customerId, role = 'customer') {
+  if (role === 'admin' || customerId.startsWith('ADMIN')) {
+    if (customerId === 'ADMIN_DT13') return 'Admin@DT13';
+    const num = customerId.split('_')[1] || '001';
+    return `Admin@${num}`;
+  }
+  if (customerId.startsWith('RC_') || customerId.startsWith('rc_')) {
+    const num = customerId.slice(-3);
+    return `RcCust@${num}`;
+  }
+  if (customerId.startsWith('CUST_')) {
+    const num = customerId.slice(-3);
+    return `Cust@${num}`;
+  }
+  return `Cust@${customerId.slice(-3)}`;
+}
+
+/**
+ * Sinh salt 16 bytes xac dinh nhung duy nhat cho tung customerId (khong random).
+ */
+export function getDeterministicSalt(customerId) {
+  return createHash('sha256').update(`DT13_SALT_${customerId}`).digest().subarray(0, 16);
+}
+
+/**
+ * Sinh credentials rieng biet (mat khau rieng + salt rieng + scrypt hash rieng) cho danh sach customer.
+ */
+export async function generateSeedCredentials(customers) {
+  const map = new Map();
+  for (const c of customers) {
+    const salt = getDeterministicSalt(c.customerId);
+    const plain = c.password || getCustomerDefaultPassword(c.customerId, c.role);
+    const hash = await hashPassword(plain, { salt });
+    map.set(c.customerId, { password: plain, hash });
+  }
+  return map;
+}
 
 export const CATEGORIES = [
   { categoryId: 'CAT_001', name: 'Laptop', description: 'May tinh xach tay cac hang' },
@@ -71,6 +115,7 @@ export function generateCustomers() {
       customerId,
       name: `Khach hang ${i}`,
       email: `cust${String(i).padStart(3, '0')}@example.test`,
+      password: getCustomerDefaultPassword(customerId, 'customer'),
       role: 'customer',
       active: true,
     });
@@ -79,6 +124,7 @@ export function generateCustomers() {
     customerId: ADMIN_ID,
     name: 'Quan tri DT13',
     email: 'admin@example.test',
+    password: getCustomerDefaultPassword(ADMIN_ID, 'admin'),
     role: 'admin',
     active: true,
   });

@@ -54,6 +54,7 @@ function CustomerEditForm({ initial, onCancel, onSubmit, busy, error }) {
   const [form, setForm] = useState({
     name: initial.name || '',
     email: initial.email || '',
+    password: '',
     active: initial.active !== false,
   });
   return (
@@ -61,7 +62,11 @@ function CustomerEditForm({ initial, onCancel, onSubmit, busy, error }) {
       className="admin-form"
       onSubmit={(e) => {
         e.preventDefault();
-        onSubmit(form);
+        const payload = { ...form };
+        if (!payload.password || payload.password.trim() === '') {
+          delete payload.password;
+        }
+        onSubmit(payload);
       }}
     >
       <h3>Sửa khách {initial.customerId}</h3>
@@ -73,6 +78,17 @@ function CustomerEditForm({ initial, onCancel, onSubmit, busy, error }) {
       <label>
         <span>Email</span>
         <input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} required />
+      </label>
+      <label>
+        <span>Đặt lại mật khẩu mới (để trống nếu giữ nguyên)</span>
+        <input
+          type="password"
+          minLength={8}
+          maxLength={256}
+          value={form.password}
+          placeholder="Nhập mật khẩu mới riêng..."
+          onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+        />
       </label>
       <label className="admin-form__inline">
         <input
@@ -254,11 +270,26 @@ export default function AdminCustomers() {
       </div>
 
       <footer className="admin-crud__footer">
-        <span className="muted">Tổng {total} khách</span>
+        <span className="muted small">Tổng số {total} khách hàng</span>
         <div className="pagination">
-          <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>Trước</button>
-          <span>Trang {page} / {totalPages}</span>
-          <button type="button" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>Sau</button>
+          <button
+            type="button"
+            className="pagination__btn"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+          >
+            ← Trước
+          </button>
+          <span className="pagination__current">{page}</span>
+          <span className="muted small">/ {totalPages}</span>
+          <button
+            type="button"
+            className="pagination__btn"
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages}
+          >
+            Sau →
+          </button>
         </div>
       </footer>
 

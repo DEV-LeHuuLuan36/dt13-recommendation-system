@@ -42,9 +42,9 @@ function propsOf(node) {
 export function createInteractionsRouter({ neo4jClient }) {
   const router = Router();
 
-  // POST /api/interactions/views
+  // POST /api/interactions/views (alias: /api/interactions/view)
   router.post(
-    '/views',
+    ['/views', '/view'],
     asyncHandler(async (req, res) => {
       requireClient(neo4jClient);
       requireCustomerRole(req);
@@ -109,9 +109,9 @@ export function createInteractionsRouter({ neo4jClient }) {
     })
   );
 
-  // POST /api/interactions/purchases
+  // POST /api/interactions/purchases (alias: /api/interactions/buy)
   router.post(
-    '/purchases',
+    ['/purchases', '/buy'],
     asyncHandler(async (req, res) => {
       requireClient(neo4jClient);
       requireCustomerRole(req);

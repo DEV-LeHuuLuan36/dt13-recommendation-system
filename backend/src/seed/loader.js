@@ -17,7 +17,7 @@ import { SEED } from '../cypher/queries.js';
  * Returns: counts (object). Throws if failAtStep is set or the database errors.
  */
 export async function runSeedInTransaction(neo4jSession, dataset, adminHash, customerHash, options = {}) {
-  const { failAtStep = null } = options;
+  const { failAtStep = null, credentials = null } = options;
   return neo4jSession.executeWrite(async (tx) => {
     const counts = { categories: 0, products: 0, customers: 0, belongsTo: 0, bought: 0, viewed: 0 };
     const marker = dataset.marker;
@@ -51,7 +51,16 @@ export async function runSeedInTransaction(neo4jSession, dataset, adminHash, cus
     if (failAtStep === 'customers') throw new Error('TEST_FAIL_AT_customers');
 
     for (const c of dataset.customers) {
-      const hash = c.role === 'admin' ? adminHash : customerHash;
+      let hash = null;
+      if (credentials && credentials.get(c.customerId)) {
+        hash = credentials.get(c.customerId).hash;
+      } else if (c.passwordHash) {
+        hash = c.passwordHash;
+      } else if (c.role === 'admin') {
+        hash = adminHash;
+      } else {
+        hash = customerHash;
+      }
       await tx.run(c.role === 'admin' ? SEED.upsertAdmin : SEED.upsertCustomer, {
         customerId: c.customerId,
         name: c.name,

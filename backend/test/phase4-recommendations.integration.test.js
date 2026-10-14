@@ -672,6 +672,30 @@ test('integration: Phase 4 recommendations (CF + co_bought)', async (t) => {
     }
   });
 
+  /* ---------------- SV2 Multi-behavior & Route Aliases ---------------- */
+
+  await t.test('SV2: multi-behavior weighted formula and route aliases', async () => {
+    // 1. GET /api/recommendations/me?formula=weighted returns weighted method and reason
+    const weightedMe = await agentA.get('/api/recommendations/me?formula=weighted');
+    assert.equal(weightedMe.status, 200);
+    assert.equal(weightedMe.body.method, 'user_cf_weighted');
+    assert.ok(weightedMe.body.formula.includes('3.0'));
+
+    // 2. GET /api/recommendations/co-bought/:productId alias returns 200
+    const coBoughtAlias = await agentA.get(`/api/recommendations/co-bought/${P1.productId}`);
+    assert.equal(coBoughtAlias.status, 200);
+
+    // 3. GET /api/recommendations/co-bought/:productId?formula=weighted returns weighted co_bought
+    const weightedCoBought = await agentA.get(`/api/recommendations/co-bought/${P1.productId}?formula=weighted`);
+    assert.equal(weightedCoBought.status, 200);
+    assert.equal(weightedCoBought.body.method, 'co_bought_weighted');
+
+    // 4. GET /api/recommendations/user-feed/:customerId returns direct feed
+    const userFeed = await agentA.get(`/api/recommendations/user-feed/${A.customerId}`);
+    assert.equal(userFeed.status, 200);
+    assert.equal(userFeed.body.targetCustomerId, A.customerId);
+  });
+
   /* ----------------------------- Cleanup sanity ------------------------ */
 
   await t.test('cleanup: bought/viewed counts return to 0 after t.after', async () => {

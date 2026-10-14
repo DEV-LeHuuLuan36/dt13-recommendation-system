@@ -16,56 +16,20 @@
  * No side effects (writing .env, logging passwords) happen inside the callback.
  */
 import neo4j from 'neo4j-driver';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { randomBytes } from 'node:crypto';
-import { loadConfig, parseEnvFile } from '../src/config.js';
-import { hashPassword } from '../src/password.js';
-import { generateSeedDataset, validateSeedDataset } from '../src/seed/generator.js';
+import { loadConfig } from '../src/config.js';
+import { generateSeedDataset, validateSeedDataset, generateSeedCredentials } from '../src/seed/generator.js';
 import { runSeedInTransaction } from '../src/seed/loader.js';
 
 const EXIT_OK = 0;
 const EXIT_FAIL = 1;
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const backendRoot = resolve(__dirname, '..');
-const envPath = resolve(backendRoot, '.env');
-
 function log(msg) { console.log(`[db-seed] ${msg}`); }
 function logErr(msg) { console.error(`[db-seed] ${msg}`); }
-
-/**
- * Ensure DEMO_ADMIN_PASSWORD and DEMO_CUSTOMER_PASSWORD exist in .env.
- * If missing, generate them with node:crypto and append to the file (do not
- * overwrite). Never print the values.
- */
-async function ensureDemoPasswords() {
-  let env = {};
-  if (existsSync(envPath)) env = parseEnvFile(envPath);
-  const updates = {};
-  if (!env.DEMO_ADMIN_PASSWORD) updates.DEMO_ADMIN_PASSWORD = randomBytes(12).toString('base64url');
-  if (!env.DEMO_CUSTOMER_PASSWORD) updates.DEMO_CUSTOMER_PASSWORD = randomBytes(12).toString('base64url');
-  if (Object.keys(updates).length === 0) {
-    return { adminPassword: env.DEMO_ADMIN_PASSWORD, customerPassword: env.DEMO_CUSTOMER_PASSWORD };
-  }
-  const appendLines = Object.entries(updates).map(([k, v]) => `${k}=${v}`);
-  const existing = readFileSync(envPath, 'utf8');
-  const sep = existing.endsWith('\n') ? '' : '\n';
-  writeFileSync(envPath, existing + sep + appendLines.join('\n') + '\n', 'utf8');
-  log('Generated new DEMO_* passwords and appended to backend/.env (local only, not printed).');
-  return { adminPassword: updates.DEMO_ADMIN_PASSWORD, customerPassword: updates.DEMO_CUSTOMER_PASSWORD };
-}
 
 async function main() {
   const config = loadConfig();
   if (!config.neo4jFullyConfigured) {
     logErr('NEO4J_NOT_CONFIGURED: missing NEO4J_URI/USERNAME/PASSWORD/DATABASE in backend/.env.');
-    process.exit(EXIT_FAIL);
-  }
-  const { adminPassword, customerPassword } = await ensureDemoPasswords();
-  if (!adminPassword || !customerPassword) {
-    logErr('Missing DEMO_ADMIN_PASSWORD or DEMO_CUSTOMER_PASSWORD.');
     process.exit(EXIT_FAIL);
   }
 
@@ -78,9 +42,9 @@ async function main() {
   }
   log(`Dataset generator: products=${dataset.products.length}, customers=${dataset.customers.length}, categories=${dataset.categories.length}, bought=${dataset.bought.length}, viewed=${dataset.viewed.length}, marker=${dataset.marker}`);
 
-  // (2) Hash password TRUOC khi mo transaction.
-  const adminHash = await hashPassword(adminPassword);
-  const customerHash = await hashPassword(customerPassword);
+  // (2) Sinh mat khau rieng + salt rieng + passwordHash (scrypt) rieng biet cho tung Customer/Admin.
+  const credentials = await generateSeedCredentials(dataset.customers);
+  log(`Generated ${credentials.size} unique customer credentials with deterministic salts and scrypt hashes.`);
 
   const driver = neo4j.driver(
     config.neo4jUri,
@@ -91,9 +55,8 @@ async function main() {
 
   let exit = EXIT_OK;
   try {
-    // (3) One executeWrite; callback only calls tx.run. Any throw here
-    // rolls the whole transaction back.
-    const totals = await runSeedInTransaction(session, dataset, adminHash, customerHash);
+    // (3) One executeWrite; callback only calls tx.run. Any throw here rolls the whole transaction back.
+    const totals = await runSeedInTransaction(session, dataset, null, null, { credentials });
     log(`Transaction OK: ${JSON.stringify(totals)}`);
   } catch (err) {
     logErr(`FAIL: ${err.message.split('\n')[0]}`);

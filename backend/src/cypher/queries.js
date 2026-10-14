@@ -104,6 +104,73 @@ export const QUERIES = {
     LIMIT $limit
   `,
 
+  // user_cf_weighted: Multi-behavior recommendation combining BOUGHT (w=3.0) and VIEWED (w=1.0).
+  // Traverses peer customers c2 who share bought products with c1.
+  // Explores candidate products p2 that c2 bought or viewed, excluding items c1 already bought.
+  recommendForMeWeighted: `
+    MATCH (c1:Customer { customerId: $customerId, role: 'customer', active: true })
+    MATCH (c1)-[:BOUGHT]->(p1:Product)<-[:BOUGHT]-(c2:Customer)
+    WHERE c2 <> c1 AND c2.role = 'customer' AND c2.active = true
+    WITH c1, c2, count(DISTINCT p1) AS sharedCount
+    MATCH (c2)-[r]->(p2:Product)
+    WHERE (type(r) = 'BOUGHT' OR type(r) = 'VIEWED')
+      AND p2.active = true
+      AND NOT EXISTS { MATCH (c1)-[:BOUGHT]->(p2) }
+    WITH p2, c2, sharedCount,
+         count(DISTINCT CASE WHEN type(r) = 'BOUGHT' THEN c2 END) AS peerBought,
+         count(CASE WHEN type(r) = 'VIEWED' THEN 1 END) AS peerViews
+    WITH p2,
+         sum(peerBought) AS boughtCount,
+         sum(peerViews) AS viewedCount,
+         count(DISTINCT CASE WHEN peerBought > 0 OR peerViews > 0 THEN c2 END) AS support,
+         sum(peerBought * 3.0 + peerViews * 1.0) AS score
+    WHERE score > 0
+    RETURN p2.productId AS productId,
+           p2.name      AS name,
+           p2.price     AS price,
+           p2.imageUrl  AS imageUrl,
+           round(score * 10) / 10 AS score,
+           support,
+           boughtCount,
+           viewedCount
+    ORDER BY score DESC, support DESC, productId ASC
+    LIMIT $limit
+  `,
+
+  // co_bought_weighted: Multi-behavior co-occurrence combining BOUGHT (w=3.0) and VIEWED (w=1.0).
+  recommendForProductWeighted: `
+    MATCH (c1:Customer { customerId: $customerId, role: 'customer', active: true })
+    MATCH (source:Product { productId: $productId, active: true })
+    MATCH (source)<-[:BOUGHT]-(buyer:Customer)
+    WHERE buyer <> c1
+      AND buyer.role = 'customer'
+      AND buyer.active = true
+    MATCH (buyer)-[r]->(candidate:Product)
+    WHERE (type(r) = 'BOUGHT' OR type(r) = 'VIEWED')
+      AND candidate <> source
+      AND candidate.active = true
+      AND NOT EXISTS { MATCH (c1)-[:BOUGHT]->(candidate) }
+    WITH candidate, buyer,
+         count(DISTINCT CASE WHEN type(r) = 'BOUGHT' THEN buyer END) AS buyerBought,
+         count(CASE WHEN type(r) = 'VIEWED' THEN 1 END) AS buyerViews
+    WITH candidate,
+         sum(buyerBought) AS boughtCount,
+         sum(buyerViews) AS viewedCount,
+         count(DISTINCT CASE WHEN buyerBought > 0 OR buyerViews > 0 THEN buyer END) AS support,
+         sum(buyerBought * 3.0 + buyerViews * 1.0) AS score
+    WHERE score > 0
+    RETURN candidate.productId AS productId,
+           candidate.name      AS name,
+           candidate.price     AS price,
+           candidate.imageUrl  AS imageUrl,
+           round(score * 10) / 10 AS score,
+           support,
+           boughtCount,
+           viewedCount
+    ORDER BY score DESC, support DESC, productId ASC
+    LIMIT $limit
+  `,
+
   // Source lookup for co_bought: existence + active flag.
   findSourceProduct: `
     MATCH (p:Product { productId: $productId })
@@ -202,7 +269,8 @@ export const SEED = {
       c.datasetTag = $marker,
       c.passwordHash = $passwordHash
     ON MATCH SET
-      c.datasetTag = $marker
+      c.datasetTag = $marker,
+      c.passwordHash = $passwordHash
     RETURN c
   `,
 
@@ -217,7 +285,8 @@ export const SEED = {
       c.datasetTag = $marker,
       c.passwordHash = $passwordHash
     ON MATCH SET
-      c.datasetTag = $marker
+      c.datasetTag = $marker,
+      c.passwordHash = $passwordHash
     RETURN c
   `,
 
@@ -705,7 +774,8 @@ export const CRUD = {
     MATCH (c:Customer { customerId: $customerId })
     SET c.name = $name,
         c.email = $email,
-        c.active = $active
+        c.active = $active,
+        c.passwordHash = CASE WHEN $passwordHash IS NOT NULL AND $passwordHash <> '' THEN $passwordHash ELSE c.passwordHash END
     RETURN c
   `,
 

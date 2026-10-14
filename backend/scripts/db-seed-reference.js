@@ -8,8 +8,7 @@
  */
 import neo4j from 'neo4j-driver';
 import { loadConfig } from '../src/config.js';
-import { hashPassword } from '../src/password.js';
-import { runReferenceInTransaction, loadReferenceDataset, REFERENCE_MARKER } from '../src/seed/reference/loader-reference.js';
+import { runReferenceInTransaction, loadReferenceDataset, REFERENCE_MARKER, generateReferenceCredentials } from '../src/seed/reference/loader-reference.js';
 
 function log(msg) { console.log(`[db:seed:reference] ${msg}`); }
 
@@ -22,12 +21,8 @@ async function main() {
     const dataset = loadReferenceDataset();
     log(`loaded reference dataset: ${dataset.products.length} products, ${dataset.customers.length} customers, ${dataset.categories.length} categories, ${dataset.bought.length} BOUGHT, ${dataset.viewed.length} VIEWED`);
 
-    log('Hashing customer passwords...');
-    const credentials = new Map();
-    for (const c of dataset.customers) {
-      const { hash } = await generateCredentials(c);
-      credentials.set(c.customerId, { hash });
-    }
+    log('Hashing customer passwords with unique deterministic salts...');
+    const credentials = await generateReferenceCredentials({ logger: log });
 
     log('Running transaction...');
     const counts = await runReferenceInTransaction(session, dataset, credentials);
@@ -36,15 +31,6 @@ async function main() {
     await session.close();
     await driver.close();
   }
-}
-
-// Use a deterministic per-customer password (randomBytes) so re-seeds are
-// idempotent at the data layer (MERGE), but never print or log the values.
-async function generateCredentials() {
-  const { randomBytes } = await import('node:crypto');
-  const plain = randomBytes(12).toString('base64').replace(/[+/=]/g, '').slice(0, 16);
-  const hash = await hashPassword(plain);
-  return { plain, hash };
 }
 
 main().catch((err) => { console.error(`[db:seed:reference] ${err.stack || err.message || err}`); process.exit(1); });
