@@ -1,31 +1,31 @@
 :root {
-  /* Surface & Base Colors (Modern Tech Commerce, WCAG AA Compliant) */
-  --page: #f8fafc;
+  /* Surface & Base Colors (Requested Design Tokens) */
+  --page: #f7f8f5;
   --surface: #ffffff;
-  --surface-raised: #f1f5f9;
+  --surface-raised: #eef2ed;
   --surface-card: #ffffff;
   
   /* Text & Typography */
-  --text: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #64748b;
-  --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  --text: #162b28;
+  --text-secondary: #52665e;
+  --text-muted: #72847c;
+  --font: "Be Vietnam Pro", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   
   /* Brand Primary Colors */
-  --primary: #2563eb;
-  --primary-hover: #1d4ed8;
-  --primary-active: #1e40af;
-  --primary-light: #eff6ff;
-  --primary-border: #bfdbfe;
+  --primary: #167d69;
+  --primary-hover: #126353;
+  --primary-active: #0d4a3e;
+  --primary-light: #e8f4f1;
+  --primary-border: #b3d9d0;
   
   /* Semantic Accent Accents */
   --accent-purple: #7c3aed;
   --accent-purple-light: #f5f3ff;
   --accent-purple-border: #ddd6fe;
   
-  --accent-emerald: #059669;
-  --accent-emerald-light: #ecfdf5;
-  --accent-emerald-border: #a7f3d0;
+  --accent-emerald: #167d69;
+  --accent-emerald-light: #e8f4f1;
+  --accent-emerald-border: #b3d9d0;
   
   --accent-amber: #d97706;
   --accent-amber-light: #fffbeb;
@@ -36,9 +36,9 @@
   --danger-border: #fecaca;
   
   /* Border & Dividers */
-  --border: #e2e8f0;
-  --border-strong: #cbd5e1;
-  --border-light: #f1f5f9;
+  --border: #dce5df;
+  --border-strong: #c4d3cb;
+  --border-light: #eef2ef;
 
   /* Border Radii */
   --radius-xs: 4px;

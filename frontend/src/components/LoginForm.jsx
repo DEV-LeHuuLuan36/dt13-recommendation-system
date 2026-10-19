@@ -2,13 +2,32 @@ import { useState } from 'react';
 import { loginRequest } from '../api/auth.js';
 import '../styles/Login.css';
 
+// Demo accounts for quickly populating the email field
 const DEMO_ACCOUNTS = [
-  { badge: 'ADMIN', label: 'Quản trị viên (ADMIN_001)', email: 'admin@example.test', customerId: 'ADMIN_001', password: 'Admin@001' },
-  { badge: 'REF CATALOG', label: 'Khách hàng RC 1 (rc_c001)', email: 'nguyen.minh.an.001@example.test', customerId: 'RC_C001', password: 'RcCust@001' },
-  { badge: 'REF CATALOG', label: 'Khách hàng RC 2 (rc_c002)', email: 'tran.ngoc.bao.002@example.test', customerId: 'RC_C002', password: 'RcCust@002' },
-  { badge: 'SEED V1', label: 'Khách hàng 1 (CUST_001)', email: 'cust001@example.test', customerId: 'CUST_001', password: 'Cust@001' },
-  { badge: 'SEED V1', label: 'Khách hàng 2 (CUST_002)', email: 'cust002@example.test', customerId: 'CUST_002', password: 'Cust@002' },
-  { badge: 'COLD START', label: 'Khách hàng 5 (CUST_005)', email: 'cust005@example.test', customerId: 'CUST_005', password: 'Cust@005' },
+  {
+    label: 'Quản trị viên',
+    email: 'admin@example.test',
+  },
+  {
+    label: 'Khách hàng 01',
+    email: 'nguyen.minh.an.001@example.test',
+  },
+  {
+    label: 'Khách hàng 02',
+    email: 'tran.ngoc.bao.002@example.test',
+  },
+  {
+    label: 'Khách hàng 03',
+    email: 'le.hoai.chi.003@example.test',
+  },
+  {
+    label: 'Khách hàng 04',
+    email: 'pham.quoc.dung.004@example.test',
+  },
+  {
+    label: 'Khách hàng 05',
+    email: 'hoang.my.duyen.005@example.test',
+  },
 ];
 
 export default function LoginForm({ onLoggedIn }) {
@@ -35,14 +54,14 @@ export default function LoginForm({ onLoggedIn }) {
   return (
     <form className="login-form" onSubmit={onSubmit} aria-label="Form đăng nhập" noValidate>
       <div className="login-form__brand" aria-hidden="true">
-        <span className="login-form__brand-mark">13</span>
-        <span className="login-form__brand-text">DT13 Store</span>
+        <span className="login-form__brand-mark">GY</span>
+        <span className="login-form__brand-text">Gợi Ý</span>
       </div>
       <h1>Chào mừng trở lại</h1>
-      <p className="muted">Đăng nhập để trải nghiệm hệ thống gợi ý sản phẩm Neo4j cá nhân hóa.</p>
+      <p className="muted">Đăng nhập để trải nghiệm mua sắm và nhận gợi ý cá nhân hóa.</p>
 
       <label className="login-field">
-        <span>Email hoặc Customer ID</span>
+        <span>Email hoặc tài khoản</span>
         <input
           type="text"
           autoComplete="username"
@@ -50,7 +69,7 @@ export default function LoginForm({ onLoggedIn }) {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           aria-invalid={error ? 'true' : 'false'}
-          placeholder="admin@example.test hoặc CUST_001 / rc_c001..."
+          placeholder="Nhập email của bạn..."
         />
       </label>
 
@@ -63,6 +82,7 @@ export default function LoginForm({ onLoggedIn }) {
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            placeholder="Nhập mật khẩu..."
           />
           <button
             type="button"
@@ -84,8 +104,9 @@ export default function LoginForm({ onLoggedIn }) {
         {submitting ? 'Đang xử lý…' : 'Đăng nhập'}
       </button>
 
+      {/* Demo Quick Account Selector (local/demo testing) */}
       <div className="login-quick">
-        <span className="login-quick__title">Chọn nhanh tài khoản Demo (Tự động điền an toàn):</span>
+        <span className="login-quick__title">Chọn nhanh tài khoản:</span>
         <div className="login-quick__grid">
           {DEMO_ACCOUNTS.map((acc) => (
             <button
@@ -94,33 +115,15 @@ export default function LoginForm({ onLoggedIn }) {
               className="login-quick__card"
               onClick={() => {
                 setEmail(acc.email);
-                setPassword(acc.password);
+                setPassword('');
                 setError(null);
               }}
-              title={`Chọn tài khoản ${acc.label}`}
+              title={`Đăng nhập ${acc.label}`}
             >
-              <div className="login-quick__badge-row">
-                <span className={`login-quick__badge login-quick__badge--${acc.badge.toLowerCase().replace(/\s+/g, '-')}`}>
-                  {acc.badge}
-                </span>
-              </div>
               <span className="login-quick__name">{acc.label}</span>
             </button>
           ))}
         </div>
-      </div>
-
-      <div className="login-rule-box">
-        <div className="login-rule-box__header">
-          <svg className="login-rule-box__icon" viewBox="0 0 20 20" fill="currentColor" width="16" height="16">
-            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-          </svg>
-          <strong>Hệ thống xác thực Neo4j Scrypt:</strong>
-        </div>
-        <p className="login-rule-box__desc" style={{ fontSize: '13px', lineHeight: '1.5', margin: '4px 0 0 0', color: 'var(--text-secondary)' }}>
-          Hệ thống mã hóa chuẩn <code>scrypt</code> bảo vệ tài khoản người dùng độc lập trong cơ sở dữ liệu Neo4j.
-          Tra cứu danh mục tài khoản mẫu và thông tin kiểm thử dành cho giảng viên tại tài liệu <code>ACCOUNTS.md</code> ở thư mục gốc của dự án.
-        </p>
       </div>
     </form>
   );

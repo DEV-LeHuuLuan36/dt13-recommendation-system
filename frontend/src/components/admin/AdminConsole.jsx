@@ -4,13 +4,15 @@ import AdminProducts from './AdminProducts.jsx';
 import AdminCategories from './AdminCategories.jsx';
 import AdminCustomers from './AdminCustomers.jsx';
 import AdminRecommendationGraph from './AdminRecommendationGraph.jsx';
+import AdminOfflineEvaluation from './AdminOfflineEvaluation.jsx';
 import '../../styles/AdminCrud.css';
 
 const TABS = [
-  { key: 'products', label: 'Quản lý Sản phẩm' },
-  { key: 'categories', label: 'Quản lý Danh mục' },
-  { key: 'customers', label: 'Quản lý Khách hàng' },
-  { key: 'graph', label: 'Phân tích Đồ thị Gợi ý (Neo4j)' },
+  { key: 'products', label: 'Sản phẩm' },
+  { key: 'categories', label: 'Danh mục' },
+  { key: 'customers', label: 'Khách hàng' },
+  { key: 'graph', label: 'Phân tích gợi ý' },
+  { key: 'evaluation', label: 'Đánh giá' },
 ];
 
 export default function AdminConsole({ onBack }) {
@@ -65,7 +67,7 @@ export default function AdminConsole({ onBack }) {
           products: prodCount,
           categories: catCount != null ? catCount : 6,
           customers: custCount,
-          neo4j: healthRes.status === 'fulfilled' && healthRes.value?.status === 'connected' ? 'Connected (Active)' : 'Available',
+          neo4j: healthRes.status === 'fulfilled' && healthRes.value?.status === 'connected' ? 'Đã kết nối' : 'Khả dụng',
         });
       } catch {
         // non-blocking
@@ -85,48 +87,41 @@ export default function AdminConsole({ onBack }) {
           ← Quay lại cửa hàng
         </button>
         {/* Single H1 on Admin View */}
-        <h1>Bảng điều khiển Quản trị & Phân tích Đồ thị</h1>
-        <p className="muted">
-          Quản trị toàn diện danh mục hàng hóa, dữ liệu khách hàng bảo mật (Scrypt) và trực quan hóa mô hình gợi ý tương quan Neo4j.
-        </p>
+        <h1>Quản trị cửa hàng</h1>
 
         {/* KPI Stat Cards Row */}
         <div className="admin-kpi-grid">
           <div className="admin-kpi-card">
             <div className="admin-kpi-card__icon" aria-hidden="true">📦</div>
             <div className="admin-kpi-card__body">
-              <span className="admin-kpi-card__label">Tổng sản phẩm</span>
+              <span className="admin-kpi-card__label">Sản phẩm</span>
               <strong className="admin-kpi-card__value">{stats.products ?? '…'}</strong>
-              <span className="admin-kpi-card__sub muted small">Bao gồm cả SP ngừng KD</span>
             </div>
           </div>
 
           <div className="admin-kpi-card">
             <div className="admin-kpi-card__icon" aria-hidden="true">🏷️</div>
             <div className="admin-kpi-card__body">
-              <span className="admin-kpi-card__label">Danh mục ngành hàng</span>
+              <span className="admin-kpi-card__label">Danh mục</span>
               <strong className="admin-kpi-card__value">{stats.categories ?? '…'}</strong>
-              <span className="admin-kpi-card__sub muted small">Cạnh :BELONGS_TO</span>
             </div>
           </div>
 
           <div className="admin-kpi-card">
             <div className="admin-kpi-card__icon" aria-hidden="true">👥</div>
             <div className="admin-kpi-card__body">
-              <span className="admin-kpi-card__label">Tài khoản khách hàng</span>
+              <span className="admin-kpi-card__label">Khách hàng</span>
               <strong className="admin-kpi-card__value">{stats.customers ?? '…'}</strong>
-              <span className="admin-kpi-card__sub text-success small">Scrypt Salt độc lập 100%</span>
             </div>
           </div>
 
           <div className="admin-kpi-card">
             <div className="admin-kpi-card__icon" aria-hidden="true">🌐</div>
             <div className="admin-kpi-card__body">
-              <span className="admin-kpi-card__label">Cơ sở dữ liệu Neo4j</span>
+              <span className="admin-kpi-card__label">Trạng thái kết nối</span>
               <strong className="admin-kpi-card__value text-success" style={{ fontSize: '1.125rem' }}>
                 {stats.neo4j}
               </strong>
-              <span className="admin-kpi-card__sub muted small">Bolt protocol active</span>
             </div>
           </div>
         </div>
@@ -154,6 +149,7 @@ export default function AdminConsole({ onBack }) {
         {tab === 'categories' && <AdminCategories onBack={onBack} />}
         {tab === 'customers' && <AdminCustomers onBack={onBack} />}
         {tab === 'graph' && <AdminRecommendationGraph onBack={onBack} />}
+        {tab === 'evaluation' && <AdminOfflineEvaluation />}
       </main>
     </div>
   );

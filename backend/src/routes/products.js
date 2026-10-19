@@ -20,6 +20,9 @@ import {
 } from '../lib/validate.js';
 import { generateId, PREFIX } from '../lib/ids.js';
 import { publicProductWithCategory, publicCategory, paginated } from '../lib/mappers.js';
+import { optionalAuth, requireAuth, requireAdmin } from '../middleware/auth.js';
+
+import { parseSearchIntent } from '../lib/searchIntentParser.js';
 
 const PRODUCT_BODY_FIELDS = ['name', 'description', 'price', 'categoryId', 'imageUrl', 'active'];
 const PRODUCT_PATCH_FIELDS = ['name', 'description', 'price', 'categoryId', 'imageUrl', 'active'];
@@ -37,6 +40,7 @@ function checkProductVisible(productProps, profile, { includeInactive = false } 
 
 export function createProductsRouter({ neo4jClient }) {
   const router = Router();
+  router.use(optionalAuth(neo4jClient));
   const requireClient = () => {
     if (!neo4jClient) {
       throw Object.assign(new Error('Backend chua ket noi CSDL.'), {
@@ -53,18 +57,47 @@ export function createProductsRouter({ neo4jClient }) {
       requireClient();
       const page = validatePage(req.query.page);
       const pageSize = validatePageSize(req.query.pageSize);
-      const q = typeof req.query.q === 'string' ? req.query.q.trim() : null;
-      const categoryId = typeof req.query.categoryId === 'string' && req.query.categoryId.trim()
+      const rawQ = typeof req.query.q === 'string' ? req.query.q.trim() : null;
+
+      // Parse structured intent from search query
+      const intent = rawQ ? parseSearchIntent(rawQ) : null;
+
+      // Explicit user filters override inferred intent
+      const hasExplicitCategory = typeof req.query.categoryId === 'string' && req.query.categoryId.trim() !== '';
+      const hasExplicitBrand = typeof req.query.brand === 'string' && req.query.brand.trim() !== '';
+      const hasExplicitPriceMin = req.query.priceMin !== undefined && req.query.priceMin !== '';
+      const hasExplicitPriceMax = req.query.priceMax !== undefined && req.query.priceMax !== '';
+
+      const categoryId = hasExplicitCategory
         ? req.query.categoryId.trim()
-        : null;
-      const brand = typeof req.query.brand === 'string' && req.query.brand.trim()
+        : (intent && intent.category ? intent.category.id : null);
+
+      const brand = hasExplicitBrand
         ? req.query.brand.trim()
-        : null;
-      const sort = validateProductSort(req.query.sort);
-      const { min: priceMin, max: priceMax } = validatePriceRange({
+        : (intent && intent.brands.length === 1 ? intent.brands[0] : null);
+
+      const { min: explicitPriceMin, max: explicitPriceMax } = validatePriceRange({
         min: req.query.priceMin,
         max: req.query.priceMax,
       });
+
+      const priceMin = hasExplicitPriceMin
+        ? explicitPriceMin
+        : (intent && intent.minPrice !== null ? intent.minPrice : null);
+
+      const priceMax = hasExplicitPriceMax
+        ? explicitPriceMax
+        : (intent && intent.maxPrice !== null ? intent.maxPrice : null);
+
+      const inclusiveMin = hasExplicitPriceMin ? true : (intent ? intent.inclusiveMin : true);
+      const inclusiveMax = hasExplicitPriceMax ? true : (intent ? intent.inclusiveMax : true);
+      const targetPrice = (hasExplicitPriceMin || hasExplicitPriceMax) ? null : (intent ? intent.targetPrice : null);
+      const excludedBrands = intent && intent.excludedBrands ? intent.excludedBrands : [];
+
+      // Cleaned keyword for text search (price phrase removed)
+      const q = intent && intent.cleanedQuery ? intent.cleanedQuery : (rawQ || null);
+
+      const sort = validateProductSort(req.query.sort);
       const includeInactive = req.query.includeInactive === 'true' && req.auth && req.auth.role === 'admin';
       const activeFilter = includeInactive ? 'all' : 'active';
 
@@ -72,8 +105,12 @@ export function createProductsRouter({ neo4jClient }) {
         q: q || null,
         categoryId: categoryId || null,
         brand: brand || null,
-        priceMin,
-        priceMax,
+        excludedBrands,
+        priceMin: priceMin !== null ? priceMin : null,
+        priceMax: priceMax !== null ? priceMax : null,
+        inclusiveMin,
+        inclusiveMax,
+        targetPrice: targetPrice !== null ? targetPrice : null,
         sort: sort || '',
         activeFilter,
         skip: (page - 1) * pageSize,
@@ -85,7 +122,16 @@ export function createProductsRouter({ neo4jClient }) {
 
       const listRes = await runRead(neo4jClient, CRUD.listProducts, params);
       const items = listRes.records.map((r) => publicProductWithCategory(r.get('p'), r.get('c')));
-      return res.status(200).json(paginated(items, page, pageSize, total));
+
+      const responsePayload = paginated(items, page, pageSize, total);
+      if (intent) {
+        responsePayload.intent = intent;
+      }
+      if (total === 0 && (priceMin !== null || priceMax !== null || targetPrice !== null)) {
+        responsePayload.message = 'Chưa có sản phẩm phù hợp với khoảng giá này';
+      }
+
+      return res.status(200).json(responsePayload);
     })
   );
 
@@ -109,11 +155,10 @@ export function createProductsRouter({ neo4jClient }) {
   // POST /api/products (admin)
   router.post(
     '/',
+    requireAuth(neo4jClient),
+    requireAdmin(),
     asyncHandler(async (req, res) => {
       requireClient();
-      if (!req.auth || req.auth.role !== 'admin') {
-        throw Object.assign(new Error('Yeu cau quyen admin.'), { status: 403, code: 'ADMIN_REQUIRED' });
-      }
       const body = pickAllowed(req.body, PRODUCT_BODY_FIELDS);
       const name = validateName(body.name, 'name');
       const description = validateDescription(body.description);
@@ -154,11 +199,10 @@ export function createProductsRouter({ neo4jClient }) {
   // PATCH /api/products/:productId (admin)
   router.patch(
     '/:productId',
+    requireAuth(neo4jClient),
+    requireAdmin(),
     asyncHandler(async (req, res) => {
       requireClient();
-      if (!req.auth || req.auth.role !== 'admin') {
-        throw Object.assign(new Error('Yeu cau quyen admin.'), { status: 403, code: 'ADMIN_REQUIRED' });
-      }
       const productId = validateId(req.params.productId, 'productId');
       const body = pickAllowed(req.body, PRODUCT_PATCH_FIELDS);
 
@@ -220,11 +264,10 @@ export function createProductsRouter({ neo4jClient }) {
   // DELETE /api/products/:productId (admin)
   router.delete(
     '/:productId',
+    requireAuth(neo4jClient),
+    requireAdmin(),
     asyncHandler(async (req, res) => {
       requireClient();
-      if (!req.auth || req.auth.role !== 'admin') {
-        throw Object.assign(new Error('Yeu cau quyen admin.'), { status: 403, code: 'ADMIN_REQUIRED' });
-      }
       const productId = validateId(req.params.productId, 'productId');
       const result = await runInTransaction(neo4jClient, async (tx) => {
         const cur = await tx.run(CRUD.getProductById, { productId });

@@ -47,6 +47,44 @@ export function requireAdmin() {
   };
 }
 
+// Populates req.auth if session exists and is active; does not block unauthenticated requests.
+export function optionalAuth(neo4jClient) {
+  return async function optionalAuthMiddleware(req, res, next) {
+    const session = req.session || {};
+    const customerId = session.customerId;
+    if (!customerId || !neo4jClient) {
+      req.auth = null;
+      return next();
+    }
+    try {
+      const dbRes = await neo4jClient.read(
+        'MATCH (c:Customer { customerId: $customerId }) RETURN c.role AS role, c.active AS active LIMIT 1',
+        { customerId }
+      );
+      if (!dbRes.records[0]) {
+        await destroySession(req);
+        req.auth = null;
+        return next();
+      }
+      const active = dbRes.records[0].get('active');
+      if (!active) {
+        await destroySession(req);
+        return next(Object.assign(new Error('Tai khoan dang inactive'), { status: 403, code: 'ACCOUNT_INACTIVE' }));
+      }
+      req.auth = {
+        customerId,
+        role: dbRes.records[0].get('role'),
+        active: true,
+      };
+      return next();
+    } catch (err) {
+      if (err.status === 403) return next(err);
+      req.auth = null;
+      return next();
+    }
+  };
+}
+
 function destroySession(req) {
   return new Promise((resolve) => {
     if (!req.session) return resolve();

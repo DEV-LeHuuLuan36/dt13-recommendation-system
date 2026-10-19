@@ -1,6 +1,6 @@
 // Technical SEO & Structured Data (JSON-LD) Utility
-const SITE_NAME = 'DT13 Store - Hệ thống Gợi ý Neo4j';
-const DEFAULT_DESC = 'DT13 Store - Nền tảng thương mại điện tử công nghệ tích hợp hệ thống gợi ý sản phẩm thông minh bằng Neo4j Graph Database và Collaborative Filtering.';
+const SITE_NAME = 'Gợi Ý';
+const DEFAULT_DESC = 'Nền tảng mua sắm trực tuyến với hệ thống gợi ý sản phẩm thông minh và cá nhân hóa.';
 const DEFAULT_IMAGE = '/favicon.svg';
 
 /**
@@ -56,13 +56,25 @@ export function setMetaRobots(content) {
 }
 
 /**
- * Set canonical URL link tag
+ * Set canonical URL link tag only when a real domain is configured
  * @param {string} [url]
  */
 export function setCanonicalUrl(url) {
   if (typeof document === 'undefined') return;
-  const targetUrl = url || (typeof window !== 'undefined' ? window.location.href : '');
+  const configuredDomain = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_CANONICAL_DOMAIN)
+    ? import.meta.env.VITE_CANONICAL_DOMAIN.replace(/\/+$/, '')
+    : '';
+
+  let targetUrl = url;
+  if (!targetUrl && configuredDomain && typeof window !== 'undefined') {
+    targetUrl = `${configuredDomain}${window.location.pathname}${window.location.search}`;
+  }
+
   let el = document.querySelector('link[rel="canonical"]');
+  if (!targetUrl || !configuredDomain) {
+    if (el) el.remove();
+    return;
+  }
   if (!el) {
     el = document.createElement('link');
     el.setAttribute('rel', 'canonical');
@@ -70,6 +82,26 @@ export function setCanonicalUrl(url) {
   }
   el.setAttribute('href', targetUrl);
   setOpenGraph({ url: targetUrl });
+}
+
+/**
+ * Set canonical URL distinguishing each individual product
+ * @param {string} productId
+ */
+export function setProductCanonicalUrl(productId) {
+  if (typeof document === 'undefined' || !productId) return;
+  const configuredDomain = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_CANONICAL_DOMAIN)
+    ? import.meta.env.VITE_CANONICAL_DOMAIN.replace(/\/+$/, '')
+    : '';
+
+  if (!configuredDomain) {
+    const el = document.querySelector('link[rel="canonical"]');
+    if (el) el.remove();
+    return;
+  }
+
+  const cleanProductUrl = `${configuredDomain}/?view=product&id=${encodeURIComponent(productId)}`;
+  setCanonicalUrl(cleanProductUrl);
 }
 
 /**
@@ -144,7 +176,7 @@ export function setProductListStructuredData(products = [], categoryName = '') {
   const websiteSchema = {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
-    name: 'DT13 Store',
+    name: 'Gợi Ý',
     url: origin,
     description: DEFAULT_DESC,
     potentialAction: {
@@ -157,7 +189,7 @@ export function setProductListStructuredData(products = [], categoryName = '') {
   const itemListSchema = {
     '@context': 'https://schema.org',
     '@type': 'ItemList',
-    name: categoryName ? `Danh mục ${categoryName} - DT13 Store` : 'Danh sách sản phẩm công nghệ - DT13 Store',
+    name: categoryName ? `Danh mục ${categoryName} - Gợi Ý` : 'Danh sách sản phẩm công nghệ - Gợi Ý',
     url: currentUrl,
     numberOfItems: products.length,
     itemListElement: products.slice(0, 24).map((p, idx) => ({
@@ -189,10 +221,10 @@ export function setProductDetailStructuredData(product, categoryName = '') {
     sku: product.productId,
     mpn: product.productId,
     image: product.imageUrl ? [product.imageUrl] : [`${origin}${DEFAULT_IMAGE}`],
-    description: product.description || `${product.name} chính hãng tại DT13 Store.`,
+    description: product.description || `${product.name} chính hãng tại Gợi Ý.`,
     brand: {
       '@type': 'Brand',
-      name: product.brand || 'DT13 Store',
+      name: product.brand || 'Gợi Ý',
     },
     offers: {
       '@type': 'Offer',
@@ -205,7 +237,7 @@ export function setProductDetailStructuredData(product, categoryName = '') {
         : 'https://schema.org/OutOfStock',
       seller: {
         '@type': 'Organization',
-        name: 'DT13 Store',
+        name: 'Gợi Ý',
       },
     },
   };

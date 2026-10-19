@@ -97,13 +97,14 @@ export const api = {
   },
 
   // Recommendations (user_cf / co_bought).
-  recommendForMe(params = {}) {
+  recommendForMe(params = {}, options = {}) {
     const qs = new URLSearchParams();
     if (params.limit) qs.set('limit', String(params.limit));
     if (params.formula) qs.set('formula', String(params.formula));
     if (params.includeViews) qs.set('includeViews', String(params.includeViews));
+    if (params.excludeProductId) qs.set('excludeProductId', String(params.excludeProductId));
     const suffix = qs.toString() ? `?${qs.toString()}` : '';
-    return request(`/api/recommendations/me${suffix}`);
+    return request(`/api/recommendations/me${suffix}`, options);
   },
   recommendForProduct(productId, params = {}) {
     const qs = new URLSearchParams();
@@ -114,7 +115,30 @@ export const api = {
     return request(`/api/recommendations/products/${encodeURIComponent(productId)}${suffix}`);
   },
 
-  // Recommendation graph (admin only).
+  // Hybrid feed & Detail recommendations
+  getHybridFeed(params = {}, options = {}) {
+    const suffix = buildQuery(params);
+    return request(`/api/recommendations/feed${suffix}`, options);
+  },
+  getDetailRecommendations(productId, params = {}, options = {}) {
+    const suffix = buildQuery(params);
+    return request(`/api/recommendations/detail/${encodeURIComponent(productId)}${suffix}`, options);
+  },
+
+  // Event logging
+  recordSearch(body) { return request('/api/events/search', { method: 'POST', body }); },
+  recordViewEvent(body) { return request('/api/events/view', { method: 'POST', body }); },
+  recordImpression(body) { return request('/api/events/impression', { method: 'POST', body }); },
+  recordRecoClick(body) { return request('/api/events/click', { method: 'POST', body }); },
+  dismissRecommendation(body) { return request('/api/events/dismiss', { method: 'POST', body }); },
+  undoDismiss(body) { return request('/api/events/undo-dismiss', { method: 'POST', body }); },
+
+  // Search history
+  listSearches() { return request('/api/me/searches'); },
+  clearSearches() { return request('/api/me/searches', { method: 'DELETE' }); },
+  deleteSearch(eventId) { return request(`/api/me/searches/${encodeURIComponent(eventId)}`, { method: 'DELETE' }); },
+
+  // Recommendation graph & Offline evaluation (admin only).
   recommendationGraph(params = {}) {
     const qs = new URLSearchParams();
     if (params.customerId) qs.set('customerId', String(params.customerId));
@@ -126,6 +150,9 @@ export const api = {
   },
   getGraphRecommendation(params = {}) {
     return this.recommendationGraph(params);
+  },
+  getOfflineEvaluation() {
+    return request('/api/analytics/offline-evaluation');
   },
 };
 

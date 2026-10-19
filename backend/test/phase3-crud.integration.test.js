@@ -164,12 +164,13 @@ async function setupCategoryFixture(session, prefix, suffix = 'CAT_A') {
   return { categoryId };
 }
 
-async function setupProductFixture(session, prefix, { productIdSuffix = 'PROD_1', categoryId, price = 1_000_000 } = {}) {
+async function setupProductFixture(session, prefix, { productIdSuffix = 'PROD_1', categoryId, price = 1_000_000, active = true } = {}) {
   const productId = `${prefix}_${productIdSuffix}`;
   await session.executeWrite(async (tx) => {
     await tx.run(
       `MERGE (p:Product { productId: $productId })
-       ON CREATE SET p.name = $name, p.description = $description, p.price = $price, p.imageUrl = $imageUrl, p.active = true, p.datasetTag = $prefix, p.createdAt = datetime()`,
+       ON CREATE SET p.name = $name, p.description = $description, p.price = $price, p.imageUrl = $imageUrl, p.datasetTag = $prefix, p.createdAt = datetime()
+       SET p.active = $active`,
       {
         productId,
         name: `Phase3 Product ${productIdSuffix}`,
@@ -177,6 +178,7 @@ async function setupProductFixture(session, prefix, { productIdSuffix = 'PROD_1'
         price,
         imageUrl: '/x.svg',
         prefix,
+        active,
       }
     );
     if (categoryId) {
@@ -243,20 +245,45 @@ test('integration: Phase 3 CRUD + interactions + history', async (t) => {
     categoryId: catA.categoryId,
     price: 1_500_000,
   });
+  const productInactive = await setupProductFixture(session, prefix, {
+    productIdSuffix: 'PROD_INACT',
+    categoryId: catA.categoryId,
+    price: 999_000,
+    active: false,
+  });
 
   // ----- Permission / auth -----
 
-  await t.test('unauthenticated -> 401 on products/categories/customers/history/interactions', async () => {
+  await t.test('public read products & categories for guests; 401 on protected resources', async () => {
+    // 1. Unauthenticated guest can GET active products list and categories
     const r1 = await request(app).get('/api/products');
-    assert.equal(r1.status, 401);
+    assert.equal(r1.status, 200);
+    assert.ok(Array.isArray(r1.body.items));
+
     const r2 = await request(app).get('/api/categories');
-    assert.equal(r2.status, 401);
+    assert.equal(r2.status, 200);
+    assert.ok(Array.isArray(r2.body.items));
+
+    // 2. Unauthenticated guest can read active product details
+    const rActive = await request(app).get(`/api/products/${product1.productId}`);
+    assert.equal(rActive.status, 200);
+    assert.equal(rActive.body.productId, product1.productId);
+
+    // 3. Unauthenticated guest cannot read inactive product (404)
+    const rInact = await request(app).get(`/api/products/${productInactive.productId}`);
+    assert.equal(rInact.status, 404);
+
+    // 4. Protected endpoints still require authentication (401)
     const r3 = await request(app).get('/api/customers');
     assert.equal(r3.status, 401);
     const r4 = await request(app).get('/api/me/history');
     assert.equal(r4.status, 401);
     const r5 = await request(app).post('/api/interactions/views').send({});
     assert.equal(r5.status, 401);
+    const r6 = await request(app).post('/api/products').send({});
+    assert.equal(r6.status, 401);
+    const r7 = await request(app).post('/api/categories').send({});
+    assert.equal(r7.status, 401);
   });
 
   // ----- Login admin -----

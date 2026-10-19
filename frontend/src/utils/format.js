@@ -1,7 +1,9 @@
+const vndNumberFormatter = new Intl.NumberFormat('vi-VN');
+
 // VND formatter: 1500000 -> "1.500.000".
 export function formatVnd(value) {
   if (typeof value !== 'number' || !Number.isFinite(value)) return '-';
-  return value.toLocaleString('vi-VN');
+  return vndNumberFormatter.format(value);
 }
 
 // Vietnamese date-time formatter; returns '-' for null/invalid input.
@@ -38,23 +40,24 @@ export function normalizeSearchText(value) {
  */
 export function formatUserDisplayName(user) {
   if (!user) return 'Khách';
+  if (user.role === 'admin') return 'Quản trị viên';
   const rawName = (user.name || '').trim();
 
-  if (/^Quan tri DT13$/i.test(rawName)) return 'Quản trị viên DT13';
   if (/^Quan tri/i.test(rawName)) return 'Quản trị viên';
 
   const matchKhach = rawName.match(/^Khach hang\s*(\d+)$/i);
-  if (matchKhach) return `Khách hàng ${matchKhach[1]}`;
+  if (matchKhach) return `Khách hàng ${matchKhach[1].padStart(2, '0')}`;
 
   if (/^Khach hang$/i.test(rawName)) return 'Khách hàng';
 
-  if (rawName) return rawName;
+  if (rawName && !/^CUST_\d+/i.test(rawName) && !/^RC_C\d+/i.test(rawName)) {
+    return rawName;
+  }
 
-  if (user.role === 'admin') return 'Quản trị viên';
   if (user.customerId) {
     const idNum = user.customerId.replace(/\D/g, '');
-    if (idNum) return `Khách hàng ${Number(idNum)}`;
-    return `Khách hàng (${user.customerId})`;
+    if (idNum) return `Khách hàng ${idNum.padStart(2, '0')}`;
+    return 'Khách hàng';
   }
 
   return (user.email || 'Khách').split('@')[0];
@@ -70,7 +73,7 @@ export function formatRecommendationReason(reason, mode = 'me') {
   if (!reason) {
     return mode === 'me'
       ? 'Gợi ý thông minh dựa trên hành vi mua sắm của những khách hàng có sở thích tương đồng với bạn.'
-      : 'Gợi ý sản phẩm thường được mua kèm cùng sản phẩm này trên đồ thị giao dịch.';
+      : 'Gợi ý sản phẩm phù hợp dành riêng cho bạn.';
   }
 
   const clean = reason.trim();
@@ -79,19 +82,49 @@ export function formatRecommendationReason(reason, mode = 'me') {
     return 'Gợi ý thông minh dựa trên lịch sử mua sắm của bạn và các sản phẩm mà khách hàng tương đồng cùng lựa chọn.';
   }
 
-  if (/Goi y tu lich su mua va cac san pham cung danh muc/i.test(clean)) {
-    return 'Gợi ý dựa trên các sản phẩm nổi bật cùng danh mục bạn quan tâm.';
+  if (/Goi y tu cac san pham duoc mua boi nhung nguoi co tuong tac/i.test(clean)) {
+    return 'Gợi ý dựa trên các sản phẩm được quan tâm bởi những khách hàng có sở thích tương đồng với bạn.';
   }
 
-  if (/Chua co du lieu/i.test(clean)) {
-    return 'Chưa có đủ dữ liệu giao dịch để phân tích. Hãy mua thêm sản phẩm để nhận gợi ý chính xác hơn.';
-  }
-
-  if (/Chua co goi y/i.test(clean)) {
-    return mode === 'me'
-      ? 'Tài khoản chưa có lịch sử mua hàng. Hãy bắt đầu khám phá để nhận gợi ý được cá nhân hoá.'
-      : 'Chưa có dữ liệu mua kèm cho sản phẩm này.';
+  if (/Chua co san pham phu hop/i.test(clean) || /Chua co du lieu/i.test(clean)) {
+    return 'Chưa có đủ dữ liệu tương tác để gợi ý cá nhân hóa. Hãy khám phá và mua sắm để nhận gợi ý phù hợp nhất.';
   }
 
   return clean;
+}
+
+/**
+ * Extracts up to two useful real specifications from product text.
+ * Strictly uses existing name/desc text without inventing fake specs.
+ */
+export function extractProductSpecs(item) {
+  if (!item) return [];
+  const text = `${item.name || ''} ${item.description || ''}`;
+  const specs = [];
+
+  // Screen size
+  const screenMatch = text.match(/\b(\d+(?:[.,]\d+)?)\s*(?:inch|in)\b/i);
+  if (screenMatch) {
+    specs.push(`${screenMatch[1]} inch`);
+  }
+
+  // Chipset / CPU
+  const chipMatch = text.match(/\b(M[1-4](?:\s*Pro|\s*Max)?|Snapdragon\s*[\w\s]+|Core\s*i[3579]|Ryzen\s*[3579]|Exynos\s*\d+|Dimensity\s*\d+)\b/i);
+  if (chipMatch && specs.length < 2) {
+    specs.push(chipMatch[1].trim());
+  }
+
+  // Storage
+  const storageMatch = text.match(/\b(64GB|128GB|256GB|512GB|1TB|2TB)\b/i);
+  if (storageMatch && specs.length < 2) {
+    specs.push(storageMatch[1].trim());
+  }
+
+  // RAM
+  const ramMatch = text.match(/\b(4GB|8GB|16GB|18GB|24GB|32GB|36GB|64GB)\s*(?:RAM)?\b/i);
+  if (ramMatch && specs.length < 2 && !specs.includes(ramMatch[1].trim())) {
+    specs.push(ramMatch[1].trim());
+  }
+
+  return specs.slice(0, 2);
 }

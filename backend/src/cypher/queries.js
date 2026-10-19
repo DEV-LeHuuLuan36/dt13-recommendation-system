@@ -7,6 +7,8 @@ export const CONSTRAINTS = [
   'CREATE CONSTRAINT category_categoryId_unique IF NOT EXISTS FOR (cat:Category) REQUIRE cat.categoryId IS UNIQUE',
   'CREATE CONSTRAINT bought_eventId_unique IF NOT EXISTS FOR ()-[r:BOUGHT]-() REQUIRE r.eventId IS UNIQUE',
   'CREATE CONSTRAINT viewed_eventId_unique IF NOT EXISTS FOR ()-[r:VIEWED]-() REQUIRE r.eventId IS UNIQUE',
+  'CREATE CONSTRAINT search_eventId_unique IF NOT EXISTS FOR (s:SearchEvent) REQUIRE s.eventId IS UNIQUE',
+  'CREATE CONSTRAINT guest_guestId_unique IF NOT EXISTS FOR (g:GuestSession) REQUIRE g.guestId IS UNIQUE',
 ];
 
 export const QUERIES = {
@@ -80,7 +82,42 @@ export const QUERIES = {
     LIMIT $limit
   `,
 
-  // co_bought: other items bought by customers who also bought `source`.
+  // Fallback multi-behavior user-based recommendation:
+  // Triggered when a user has no pure purchase-based CF candidates (e.g. only viewed products).
+  // Traverses shared product interactions (BOUGHT w=3.0, VIEWED w=1.0) with peer customers,
+  // and recommends items those peers BOUGHT that the target customer has not bought.
+  recommendForMeFallback: `
+    MATCH (c1:Customer { customerId: $customerId, role: 'customer', active: true })
+    MATCH (c1)-[r1]->(p1:Product)
+    WHERE (type(r1) = 'BOUGHT' OR type(r1) = 'VIEWED')
+      AND p1.active = true
+    WITH c1, p1,
+         CASE WHEN EXISTS { MATCH (c1)-[:BOUGHT]->(p1) } THEN 3.0 ELSE 1.0 END AS w1
+    MATCH (c2:Customer)-[r2]->(p1)
+    WHERE c2 <> c1
+      AND c2.role = 'customer'
+      AND c2.active = true
+      AND (type(r2) = 'BOUGHT' OR type(r2) = 'VIEWED')
+    WITH c1, c2, p1, w1,
+         CASE WHEN EXISTS { MATCH (c2)-[:BOUGHT]->(p1) } THEN 3.0 ELSE 1.0 END AS w2
+    WITH c1, c2, count(DISTINCT p1) AS sharedCount, sum(w1 * w2) AS pairScore
+    MATCH (c2)-[:BOUGHT]->(p2:Product)
+    WHERE p2.active = true
+      AND NOT EXISTS { MATCH (c1)-[:BOUGHT]->(p2) }
+    WITH DISTINCT p2, c2, sharedCount, pairScore
+    WITH p2,
+         round(sum(pairScore) * 10) / 10 AS score,
+         count(DISTINCT c2) AS support
+    RETURN p2.productId AS productId,
+           p2.name      AS name,
+           p2.price     AS price,
+           p2.imageUrl  AS imageUrl,
+           score, support
+    ORDER BY score DESC, support DESC, productId ASC
+    LIMIT $limit
+  `,
+
+  // co_bought: other items bought by customers who also bought \`source\`.
   // The target does not need to have bought source. Excludes source, items the
   // target already bought, and admin/inactive buyers/inactive candidates.
   recommendForProduct: `
@@ -105,31 +142,41 @@ export const QUERIES = {
   `,
 
   // user_cf_weighted: Multi-behavior recommendation combining BOUGHT (w=3.0) and VIEWED (w=1.0).
-  // Traverses peer customers c2 who share bought products with c1.
+  // Traverses peer customers c2 who share bought or viewed products with c1.
   // Explores candidate products p2 that c2 bought or viewed, excluding items c1 already bought.
   recommendForMeWeighted: `
     MATCH (c1:Customer { customerId: $customerId, role: 'customer', active: true })
-    MATCH (c1)-[:BOUGHT]->(p1:Product)<-[:BOUGHT]-(c2:Customer)
-    WHERE c2 <> c1 AND c2.role = 'customer' AND c2.active = true
-    WITH c1, c2, count(DISTINCT p1) AS sharedCount
+    MATCH (c1)-[r1]->(p1:Product)
+    WHERE (type(r1) = 'BOUGHT' OR type(r1) = 'VIEWED')
+      AND p1.active = true
+    WITH c1, p1,
+         CASE WHEN EXISTS { MATCH (c1)-[:BOUGHT]->(p1) } THEN 3.0 ELSE 1.0 END AS w1
+    MATCH (c2:Customer)-[r2]->(p1)
+    WHERE c2 <> c1
+      AND c2.role = 'customer'
+      AND c2.active = true
+      AND (type(r2) = 'BOUGHT' OR type(r2) = 'VIEWED')
+    WITH c1, c2, p1, w1,
+         CASE WHEN EXISTS { MATCH (c2)-[:BOUGHT]->(p1) } THEN 3.0 ELSE 1.0 END AS w2
+    WITH c1, c2, count(DISTINCT p1) AS sharedCount, sum(w1 * w2) AS pairScore
     MATCH (c2)-[r]->(p2:Product)
     WHERE (type(r) = 'BOUGHT' OR type(r) = 'VIEWED')
       AND p2.active = true
       AND NOT EXISTS { MATCH (c1)-[:BOUGHT]->(p2) }
-    WITH p2, c2, sharedCount,
+    WITH p2, c2, sharedCount, pairScore,
          count(DISTINCT CASE WHEN type(r) = 'BOUGHT' THEN c2 END) AS peerBought,
          count(CASE WHEN type(r) = 'VIEWED' THEN 1 END) AS peerViews
     WITH p2,
          sum(peerBought) AS boughtCount,
          sum(peerViews) AS viewedCount,
          count(DISTINCT CASE WHEN peerBought > 0 OR peerViews > 0 THEN c2 END) AS support,
-         sum(peerBought * 3.0 + peerViews * 1.0) AS score
+         round(sum(peerBought * 3.0 + peerViews * 1.0) * 10) / 10 AS score
     WHERE score > 0
     RETURN p2.productId AS productId,
            p2.name      AS name,
            p2.price     AS price,
            p2.imageUrl  AS imageUrl,
-           round(score * 10) / 10 AS score,
+           score,
            support,
            boughtCount,
            viewedCount
@@ -556,9 +603,18 @@ export const CRUD = {
       CASE WHEN $brand IS NULL OR $brand = '' THEN true
            ELSE toLower(coalesce(p.brand, '')) = toLower($brand)
       END AS matchesBrand,
-      CASE WHEN $priceMin IS NULL THEN true ELSE coalesce(p.price, 0) >= toInteger($priceMin) END AS matchesPriceMin,
-      CASE WHEN $priceMax IS NULL THEN true ELSE coalesce(p.price, 0) <= toInteger($priceMax) END AS matchesPriceMax
-    WHERE matchesQ AND matchesCat AND matchesActive AND matchesBrand AND matchesPriceMin AND matchesPriceMax
+      CASE WHEN $excludedBrands IS NULL OR size($excludedBrands) = 0 THEN true
+           ELSE NOT toLower(coalesce(p.brand, '')) IN [eb IN $excludedBrands | toLower(eb)]
+      END AS matchesExcludedBrands,
+      CASE WHEN $priceMin IS NULL THEN true
+           WHEN $inclusiveMin = false THEN coalesce(p.price, 0) > toInteger($priceMin)
+           ELSE coalesce(p.price, 0) >= toInteger($priceMin)
+      END AS matchesPriceMin,
+      CASE WHEN $priceMax IS NULL THEN true
+           WHEN $inclusiveMax = false THEN coalesce(p.price, 0) < toInteger($priceMax)
+           ELSE coalesce(p.price, 0) <= toInteger($priceMax)
+      END AS matchesPriceMax
+    WHERE matchesQ AND matchesCat AND matchesActive AND matchesBrand AND matchesExcludedBrands AND matchesPriceMin AND matchesPriceMax
     WITH p, c
     ORDER BY
       CASE WHEN $sort = 'price_asc'  THEN p.price END ASC,
@@ -566,6 +622,9 @@ export const CRUD = {
       CASE WHEN $sort = 'name_asc'   THEN p.name  END ASC,
       CASE WHEN $sort = 'name_desc'  THEN p.name  END DESC,
       CASE WHEN $sort = 'newest'     THEN p.createdAt END DESC,
+      CASE WHEN $targetPrice IS NOT NULL AND ($sort IS NULL OR $sort = '' OR $sort = 'relevance')
+           THEN abs(coalesce(p.price, 0) - toInteger($targetPrice))
+      END ASC,
       p.productId ASC
     SKIP toInteger($skip) LIMIT toInteger($limit)
     RETURN p, c
@@ -589,9 +648,18 @@ export const CRUD = {
       CASE WHEN $brand IS NULL OR $brand = '' THEN true
            ELSE toLower(coalesce(p.brand, '')) = toLower($brand)
       END AS matchesBrand,
-      CASE WHEN $priceMin IS NULL THEN true ELSE coalesce(p.price, 0) >= toInteger($priceMin) END AS matchesPriceMin,
-      CASE WHEN $priceMax IS NULL THEN true ELSE coalesce(p.price, 0) <= toInteger($priceMax) END AS matchesPriceMax
-    WHERE matchesQ AND matchesCat AND matchesActive AND matchesBrand AND matchesPriceMin AND matchesPriceMax
+      CASE WHEN $excludedBrands IS NULL OR size($excludedBrands) = 0 THEN true
+           ELSE NOT toLower(coalesce(p.brand, '')) IN [eb IN $excludedBrands | toLower(eb)]
+      END AS matchesExcludedBrands,
+      CASE WHEN $priceMin IS NULL THEN true
+           WHEN $inclusiveMin = false THEN coalesce(p.price, 0) > toInteger($priceMin)
+           ELSE coalesce(p.price, 0) >= toInteger($priceMin)
+      END AS matchesPriceMin,
+      CASE WHEN $priceMax IS NULL THEN true
+           WHEN $inclusiveMax = false THEN coalesce(p.price, 0) < toInteger($priceMax)
+           ELSE coalesce(p.price, 0) <= toInteger($priceMax)
+      END AS matchesPriceMax
+    WHERE matchesQ AND matchesCat AND matchesActive AND matchesBrand AND matchesExcludedBrands AND matchesPriceMin AND matchesPriceMax
     RETURN count(p) AS total
   `,
 
@@ -923,5 +991,293 @@ export const CRUD = {
     RETURN
       seedBought, seedViewed, seedProduct, seedCustomer, seedCategory, seedBelongsTo,
       totalBought, totalViewed, totalProduct, totalCustomer, totalCategory, totalBelongsTo
+  `,
+};
+
+// =========================
+// EVENT TRACKING & AUXILIARY QUERIES
+// =========================
+
+export const EVENTS = {
+  recordSearchForCustomer: `
+    MATCH (c:Customer { customerId: $customerId })
+    MERGE (s:SearchEvent { eventId: $eventId })
+    ON CREATE SET
+      s.rawQuery = $rawQuery,
+      s.query = $query,
+      s.normalizedQuery = $normalizedQuery,
+      s.parserVersion = $parserVersion,
+      s.intent = $intentJson,
+      s.intentJson = $intentJson,
+      s.createdAt = datetime(),
+      s.datasetTag = $datasetTag
+    WITH c, s
+    MERGE (c)-[r:SEARCHED { eventId: $eventId }]->(s)
+    ON CREATE SET r.createdAt = datetime()
+    RETURN s.eventId AS eventId, s.query AS query
+  `,
+
+  recordSearchForGuest: `
+    MERGE (g:GuestSession { guestId: $guestId })
+    ON CREATE SET g.createdAt = datetime(), g.lastSeenAt = datetime()
+    ON MATCH SET g.lastSeenAt = datetime()
+    WITH g
+    MERGE (s:SearchEvent { eventId: $eventId })
+    ON CREATE SET
+      s.rawQuery = $rawQuery,
+      s.query = $query,
+      s.normalizedQuery = $normalizedQuery,
+      s.parserVersion = $parserVersion,
+      s.intent = $intentJson,
+      s.intentJson = $intentJson,
+      s.createdAt = datetime(),
+      s.datasetTag = $datasetTag
+    WITH g, s
+    MERGE (g)-[r:SEARCHED { eventId: $eventId }]->(s)
+    ON CREATE SET r.createdAt = datetime()
+    RETURN s.eventId AS eventId, s.query AS query
+  `,
+
+  findSearchByEventId: `
+    MATCH (s:SearchEvent { eventId: $eventId })
+    RETURN s.eventId AS eventId, s.query AS query
+    LIMIT 1
+  `,
+
+  listSearchesForCustomer: `
+    MATCH (c:Customer { customerId: $customerId })-[r:SEARCHED]->(s:SearchEvent)
+    RETURN s.eventId AS eventId, s.query AS query, s.rawQuery AS rawQuery, s.parserVersion AS parserVersion, s.intentJson AS intentJson, toString(r.createdAt) AS createdAt
+    ORDER BY r.createdAt DESC
+    LIMIT 20
+  `,
+
+  listSearchesForGuest: `
+    MATCH (g:GuestSession { guestId: $guestId })-[r:SEARCHED]->(s:SearchEvent)
+    RETURN s.eventId AS eventId, s.query AS query, s.rawQuery AS rawQuery, s.parserVersion AS parserVersion, s.intentJson AS intentJson, toString(r.createdAt) AS createdAt
+    ORDER BY r.createdAt DESC
+    LIMIT 20
+  `,
+
+  clearSearchesForCustomer: `
+    MATCH (c:Customer { customerId: $customerId })-[r:SEARCHED]->(s:SearchEvent)
+    DELETE r
+    WITH s
+    WHERE NOT EXISTS { MATCH ()-[other:SEARCHED]->(s) }
+    DETACH DELETE s
+  `,
+
+  clearSearchesForGuest: `
+    MATCH (g:GuestSession { guestId: $guestId })-[r:SEARCHED]->(s:SearchEvent)
+    DELETE r
+    WITH s
+    WHERE NOT EXISTS { MATCH ()-[other:SEARCHED]->(s) }
+    DETACH DELETE s
+  `,
+
+  deleteSearchForCustomer: `
+    MATCH (c:Customer { customerId: $customerId })-[r:SEARCHED { eventId: $eventId }]->(s:SearchEvent)
+    DELETE r
+    WITH s
+    WHERE NOT EXISTS { MATCH ()-[other:SEARCHED]->(s) }
+    DETACH DELETE s
+  `,
+
+  deleteSearchForGuest: `
+    MATCH (g:GuestSession { guestId: $guestId })-[r:SEARCHED { eventId: $eventId }]->(s:SearchEvent)
+    DELETE r
+    WITH s
+    WHERE NOT EXISTS { MATCH ()-[other:SEARCHED]->(s) }
+    DETACH DELETE s
+  `,
+
+  recordDismissForCustomer: `
+    MATCH (c:Customer { customerId: $customerId })
+    MATCH (p:Product { productId: $productId })
+    MERGE (c)-[r:DISMISSED { productId: $productId }]->(p)
+    SET r.eventId = $eventId,
+        r.undone = false,
+        r.reason = $reason,
+        r.createdAt = datetime()
+    RETURN r.eventId AS eventId
+  `,
+
+  recordDismissForGuest: `
+    MERGE (g:GuestSession { guestId: $guestId })
+    ON CREATE SET g.createdAt = datetime(), g.lastSeenAt = datetime()
+    WITH g
+    MATCH (p:Product { productId: $productId })
+    MERGE (g)-[r:DISMISSED { productId: $productId }]->(p)
+    SET r.eventId = $eventId,
+        r.undone = false,
+        r.reason = $reason,
+        r.createdAt = datetime()
+    RETURN r.eventId AS eventId
+  `,
+
+  undoDismissForCustomer: `
+    MATCH (c:Customer { customerId: $customerId })-[r:DISMISSED]->(p:Product)
+    WHERE r.eventId = $eventId OR p.productId = $productId
+    SET r.undone = true
+    RETURN count(r) AS updated
+  `,
+
+  undoDismissForGuest: `
+    MATCH (g:GuestSession { guestId: $guestId })-[r:DISMISSED]->(p:Product)
+    WHERE r.eventId = $eventId OR p.productId = $productId
+    SET r.undone = true
+    RETURN count(r) AS updated
+  `,
+
+  recordImpressionForCustomer: `
+    MATCH (c:Customer { customerId: $customerId })
+    UNWIND $items AS item
+    MATCH (p:Product { productId: item.productId })
+    MERGE (c)-[r:IMPRESSED { feedId: $feedId, productId: item.productId }]->(p)
+    SET r.eventId = $eventId,
+        r.position = item.position,
+        r.createdAt = datetime()
+    RETURN count(r) AS count
+  `,
+
+  recordImpressionForGuest: `
+    MERGE (g:GuestSession { guestId: $guestId })
+    ON CREATE SET g.createdAt = datetime(), g.lastSeenAt = datetime()
+    WITH g
+    UNWIND $items AS item
+    MATCH (p:Product { productId: item.productId })
+    MERGE (g)-[r:IMPRESSED { feedId: $feedId, productId: item.productId }]->(p)
+    SET r.eventId = $eventId,
+        r.position = item.position,
+        r.createdAt = datetime()
+    RETURN count(r) AS count
+  `,
+
+  recordClickForCustomer: `
+    MATCH (c:Customer { customerId: $customerId })
+    MATCH (p:Product { productId: $productId })
+    MERGE (c)-[r:CLICKED_RECO { feedId: $feedId, productId: $productId }]->(p)
+    SET r.eventId = $eventId,
+        r.position = $position,
+        r.createdAt = datetime()
+    RETURN r.eventId AS eventId
+  `,
+
+  recordClickForGuest: `
+    MERGE (g:GuestSession { guestId: $guestId })
+    ON CREATE SET g.createdAt = datetime(), g.lastSeenAt = datetime()
+    WITH g
+    MATCH (p:Product { productId: $productId })
+    MERGE (g)-[r:CLICKED_RECO { feedId: $feedId, productId: $productId }]->(p)
+    SET r.eventId = $eventId,
+        r.position = $position,
+        r.createdAt = datetime()
+    RETURN r.eventId AS eventId
+  `,
+
+  recordViewForGuest: `
+    MERGE (g:GuestSession { guestId: $guestId })
+    ON CREATE SET g.createdAt = datetime(), g.lastSeenAt = datetime()
+    ON MATCH SET g.lastSeenAt = datetime()
+    WITH g
+    MATCH (p:Product { productId: $productId })
+    MERGE (g)-[r:VIEWED { eventId: $eventId }]->(p)
+    ON CREATE SET r.viewedAt = datetime()
+    RETURN r, g.guestId AS guestId, p.productId AS productId
+  `,
+
+  getDismissedForCustomer: `
+    MATCH (c:Customer { customerId: $customerId })-[r:DISMISSED]->(p:Product)
+    WHERE r.undone = false
+    RETURN p.productId AS productId
+  `,
+
+  getDismissedForGuest: `
+    MATCH (g:GuestSession { guestId: $guestId })-[r:DISMISSED]->(p:Product)
+    WHERE r.undone = false
+    RETURN p.productId AS productId
+  `,
+
+  getRecentSearchesForCustomer: `
+    MATCH (c:Customer { customerId: $customerId })-[r:SEARCHED]->(s:SearchEvent)
+    WITH s.query AS query, s.rawQuery AS rawQuery, s.normalizedQuery AS norm, coalesce(s.intentJson, s.intent) AS intentJson,
+         duration.inSeconds(r.createdAt, datetime()).seconds / 86400.0 AS ageDays
+    WHERE ageDays <= 30.0
+    RETURN query, rawQuery, norm, intentJson, ageDays
+    ORDER BY ageDays ASC
+    LIMIT 10
+  `,
+
+  getRecentSearchesForGuest: `
+    MATCH (g:GuestSession { guestId: $guestId })-[r:SEARCHED]->(s:SearchEvent)
+    WITH s.query AS query, s.rawQuery AS rawQuery, s.normalizedQuery AS norm, coalesce(s.intentJson, s.intent) AS intentJson,
+         duration.inSeconds(r.createdAt, datetime()).seconds / 86400.0 AS ageDays
+    WHERE ageDays <= 30.0
+    RETURN query, rawQuery, norm, intentJson, ageDays
+    ORDER BY ageDays ASC
+    LIMIT 10
+  `,
+
+  getRecentViewsForCustomer: `
+    MATCH (c:Customer { customerId: $customerId })-[r:VIEWED]->(p:Product)
+    WHERE p.active = true
+    WITH p.productId AS productId, p.name AS name,
+         duration.inSeconds(r.viewedAt, datetime()).seconds / 86400.0 AS ageDays
+    WHERE ageDays <= 14.0
+    RETURN productId, name, ageDays
+    ORDER BY ageDays ASC
+    LIMIT 15
+  `,
+
+  getRecentViewsForGuest: `
+    MATCH (g:GuestSession { guestId: $guestId })-[r:VIEWED]->(p:Product)
+    WHERE p.active = true
+    WITH p.productId AS productId, p.name AS name,
+         duration.inSeconds(r.viewedAt, datetime()).seconds / 86400.0 AS ageDays
+    WHERE ageDays <= 14.0
+    RETURN productId, name, ageDays
+    ORDER BY ageDays ASC
+    LIMIT 15
+  `,
+
+  getPurchasesForCustomer: `
+    MATCH (c:Customer { customerId: $customerId })-[r:BOUGHT]->(p:Product)
+    WITH p.productId AS productId,
+         duration.inSeconds(r.purchasedAt, datetime()).seconds / 86400.0 AS ageDays
+    RETURN productId, ageDays
+  `,
+
+  getRecentImpressionsForCustomer: `
+    MATCH (c:Customer { customerId: $customerId })-[r:IMPRESSED { feedId: $feedId }]->(p:Product)
+    WITH p.productId AS productId,
+         duration.inSeconds(r.createdAt, datetime()).seconds / 86400.0 AS ageDays
+    WHERE ageDays <= 14.0
+    RETURN productId, ageDays
+  `,
+
+  getRecentImpressionsForGuest: `
+    MATCH (g:GuestSession { guestId: $guestId })-[r:IMPRESSED { feedId: $feedId }]->(p:Product)
+    WITH p.productId AS productId,
+         duration.inSeconds(r.createdAt, datetime()).seconds / 86400.0 AS ageDays
+    WHERE ageDays <= 14.0
+    RETURN productId, ageDays
+  `,
+
+  cleanupAuxiliaryData: `
+    CALL {
+      MATCH ()-[r:SEARCHED]->(s:SearchEvent)
+      WHERE duration.inSeconds(r.createdAt, datetime()).seconds > 30 * 86400
+      DELETE r
+      WITH s
+      WHERE NOT EXISTS { MATCH ()-[other:SEARCHED]->(s) }
+      DETACH DELETE s
+      RETURN count(*) AS cleanedSearches
+    }
+    CALL {
+      MATCH ()-[r:IMPRESSED]->()
+      WHERE duration.inSeconds(r.createdAt, datetime()).seconds > 14 * 86400
+      DELETE r
+      RETURN count(*) AS cleanedImpressions
+    }
+    RETURN cleanedSearches, cleanedImpressions
   `,
 };

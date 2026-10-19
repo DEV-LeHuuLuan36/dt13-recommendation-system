@@ -6,9 +6,9 @@ import { setDocumentTitle, setMetaDescription, setMetaRobots } from '../utils/se
 import '../styles/MyHistory.css';
 
 const TABS = [
-  { key: 'all', label: 'Tất cả hoạt động' },
-  { key: 'bought', label: 'Đã mua (BOUGHT)' },
-  { key: 'viewed', label: 'Đã xem (VIEWED)' },
+  { key: 'all', label: 'Tất cả' },
+  { key: 'bought', label: 'Đã mua' },
+  { key: 'viewed', label: 'Đã xem' },
 ];
 
 function HistoryItemThumbnail({ src, alt, category, productId }) {
@@ -21,8 +21,9 @@ function HistoryItemThumbnail({ src, alt, category, productId }) {
         className="history-thumb-img"
         src={resolvedUrl}
         alt={alt || 'Sản phẩm'}
-        width="44"
-        height="44"
+        width="60"
+        height="60"
+        loading="lazy"
         onError={() => setErrored(true)}
       />
     );
@@ -30,10 +31,10 @@ function HistoryItemThumbnail({ src, alt, category, productId }) {
 
   const iconPaths = getCategoryIconPaths(category || alt);
   return (
-    <div className="history-thumb-icon" aria-hidden="true" title={category || 'Thiết bị'}>
+    <div className="history-thumb-icon" aria-hidden="true">
       <svg
-        width="22"
-        height="22"
+        width="24"
+        height="24"
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
@@ -42,6 +43,20 @@ function HistoryItemThumbnail({ src, alt, category, productId }) {
       />
     </div>
   );
+}
+
+/**
+ * Formats date into a clean Vietnamese group header label (e.g. "19 tháng 10, 2026")
+ */
+function formatDateGroup(dateString) {
+  if (!dateString) return 'Gần đây';
+  const d = new Date(dateString);
+  if (Number.isNaN(d.getTime())) return 'Gần đây';
+  return d.toLocaleDateString('vi-VN', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
 }
 
 export default function MyHistory({ onBack, onSelectProduct }) {
@@ -54,8 +69,8 @@ export default function MyHistory({ onBack, onSelectProduct }) {
   const requestSeq = useRef(0);
 
   useEffect(() => {
-    setDocumentTitle('Lịch sử của tôi');
-    setMetaDescription('Lịch sử mua sắm và xem sản phẩm đã được lưu trữ trong đồ thị Neo4j.');
+    setDocumentTitle('Lịch sử của bạn');
+    setMetaDescription('Lịch sử mua sắm và xem sản phẩm của bạn.');
     setMetaRobots('noindex, nofollow');
   }, []);
 
@@ -65,8 +80,8 @@ export default function MyHistory({ onBack, onSelectProduct }) {
     try {
       const data = await api.listHistory({ type: tab, page, pageSize });
       if (mySeq !== requestSeq.current) return;
-      setItems(data.items);
-      setTotal(data.total);
+      setItems(data.items || []);
+      setTotal(data.total || 0);
       setStatus({ kind: 'ready', error: null });
     } catch (err) {
       if (mySeq !== requestSeq.current) return;
@@ -84,6 +99,22 @@ export default function MyHistory({ onBack, onSelectProduct }) {
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
+  // Group items by date for clean readability
+  const groupedItems = useMemo(() => {
+    const groups = [];
+    let currentGroup = null;
+
+    for (const item of items) {
+      const dateKey = formatDateGroup(item.occurredAt);
+      if (!currentGroup || currentGroup.dateKey !== dateKey) {
+        currentGroup = { dateKey, entries: [] };
+        groups.push(currentGroup);
+      }
+      currentGroup.entries.push(item);
+    }
+    return groups;
+  }, [items]);
+
   return (
     <div className="my-history-page">
       <div className="my-history__header">
@@ -91,13 +122,13 @@ export default function MyHistory({ onBack, onSelectProduct }) {
           ← Quay lại cửa hàng
         </button>
         {/* Single H1 on History View */}
-        <h1>Lịch sử mua sắm & Tương tác</h1>
+        <h1>Lịch sử của bạn</h1>
         <p className="muted">
-          Nhật ký các cạnh quan hệ <code>:BOUGHT</code> và <code>:VIEWED</code> giữa tài khoản của bạn và các sản phẩm trong Neo4j.
+          Theo dõi các sản phẩm bạn đã xem và đặt mua.
         </p>
 
-        {/* Tab Selection */}
-        <div className="my-history__tabs" role="tablist">
+        {/* Clean Tab Selection: Tất cả, Đã mua, Đã xem */}
+        <div className="my-history__tabs" role="tablist" aria-label="Bộ lọc lịch sử">
           {TABS.map((t) => (
             <button
               key={t.key}
@@ -116,7 +147,7 @@ export default function MyHistory({ onBack, onSelectProduct }) {
       {status.kind === 'loading' && (
         <div className="my-history__loading" role="status">
           <div className="spinner small" aria-hidden="true" />
-          <p className="muted">Đang tải lịch sử giao dịch…</p>
+          <p className="muted">Đang tải lịch sử…</p>
         </div>
       )}
 
@@ -135,7 +166,7 @@ export default function MyHistory({ onBack, onSelectProduct }) {
               ? 'Bạn chưa mua sản phẩm nào.'
               : tab === 'viewed'
               ? 'Bạn chưa có lịch sử xem sản phẩm nào.'
-              : 'Bạn chưa có hoạt động nào trong hệ thống.'}
+              : 'Bạn chưa có hoạt động nào.'}
           </p>
           <button type="button" className="btn-primary" onClick={onBack}>
             Khám phá sản phẩm ngay
@@ -143,92 +174,99 @@ export default function MyHistory({ onBack, onSelectProduct }) {
         </div>
       )}
 
+      {/* Date-grouped History List */}
       {items.length > 0 && (
         <div className="my-history__list">
-          {items.map((item) => (
-            <article key={`${item.type}-${item.eventId}`} className="history-row">
-              {/* Left Column: Status SVG + 44x44 Category Icon + Product Name & SKU */}
-              <div className="history-row__left">
-                {item.type === 'bought' ? (
-                  <span className="history-status-badge history-status-badge--bought" title="Đã mua (:BOUGHT)">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <circle cx="8" cy="21" r="1"/>
-                      <circle cx="19" cy="21" r="1"/>
-                      <path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/>
-                    </svg>
-                  </span>
-                ) : (
-                  <span className="history-status-badge history-status-badge--viewed" title="Đã xem (:VIEWED)">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                      <circle cx="12" cy="12" r="3"/>
-                    </svg>
-                  </span>
-                )}
-
-                <HistoryItemThumbnail
-                  src={item.productImageUrl}
-                  alt={item.productName}
-                  category={item.categoryName || item.productName || item.productId}
-                  productId={item.productId}
-                />
-
-                <div className="history-row__info">
-                  <h3 className="history-row__name" title={item.productName}>
-                    {item.productName || item.productId || 'Sản phẩm'}
-                  </h3>
-                  <div className="history-row__sku">
-                    Mã SP: <code>{item.productId}</code>
-                  </div>
-                </div>
+          {groupedItems.map((group) => (
+            <section key={group.dateKey} className="history-group" aria-label={group.dateKey}>
+              <div className="history-group__date-header">
+                {group.dateKey}
               </div>
 
-              {/* Middle Column: Quantity & Unit Price (BOUGHT) or Interaction Type (VIEWED) */}
-              <div className="history-row__mid">
-                {item.type === 'bought' ? (
-                  <div className="history-row__meta-pair">
-                    <span className="meta-label">Số lượng & Đơn giá:</span>
-                    <span className="meta-val">
-                      <strong>{item.quantity}</strong> × {formatVnd(item.unitPrice)} ₫
-                    </span>
-                  </div>
-                ) : (
-                  <div className="history-row__meta-pair">
-                    <span className="meta-label">Hoạt động:</span>
-                    <span className="meta-val text-blue">Đã xem chi tiết sản phẩm</span>
-                  </div>
-                )}
-              </div>
+              <div className="history-group__items">
+                {group.entries.map((item) => {
+                  const productUrl = `/?view=product&id=${encodeURIComponent(item.productId)}`;
+                  return (
+                    <article key={`${item.type}-${item.eventId}`} className="history-row">
+                      {/* Left Column: Image thumbnail + Name */}
+                      <div className="history-row__left">
+                        <a
+                          href={productUrl}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            if (item.productId && onSelectProduct) onSelectProduct(item.productId);
+                          }}
+                          className="history-row__thumb-link"
+                          tabIndex={-1}
+                          aria-hidden="true"
+                        >
+                          <HistoryItemThumbnail
+                            src={item.productImageUrl}
+                            alt={item.productName}
+                            category={item.categoryName || item.productName}
+                            productId={item.productId}
+                          />
+                        </a>
 
-              {/* Right Column: Total Price + Occurred Timestamp + View Product Button */}
-              <div className="history-row__right">
-                <div className="history-row__financial">
-                  {item.type === 'bought' ? (
-                    <div className="history-row__total">
-                      <span className="meta-label">Tổng tiền:</span>
-                      <span className="total-val">{formatVnd(item.quantity * item.unitPrice)} ₫</span>
-                    </div>
-                  ) : (
-                    <div className="history-row__total">
-                      <span className="meta-label">Tương tác:</span>
-                      <span className="view-val">1 lượt xem</span>
-                    </div>
-                  )}
-                  <time className="history-row__time" dateTime={item.occurredAt}>
-                    {formatDateTime(item.occurredAt)}
-                  </time>
-                </div>
+                        <div className="history-row__info">
+                          <div className="history-row__type-badge">
+                            {item.type === 'bought' ? (
+                              <span className="badge-bought">Đã mua</span>
+                            ) : (
+                              <span className="badge-viewed">Đã xem</span>
+                            )}
+                            <time className="history-row__time" dateTime={item.occurredAt}>
+                              {formatDateTime(item.occurredAt)}
+                            </time>
+                          </div>
 
-                <button
-                  type="button"
-                  className="btn-outline history-row__action-btn"
-                  onClick={() => item.productId && onSelectProduct(item.productId)}
-                  aria-label={`Xem lại sản phẩm ${item.productName || item.productId}`}
-                >
-                  Xem sản phẩm
-                </button>
+                          <h3 className="history-row__name" title={item.productName}>
+                            <a
+                              href={productUrl}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                if (item.productId && onSelectProduct) onSelectProduct(item.productId);
+                              }}
+                            >
+                              {item.productName || 'Sản phẩm'}
+                            </a>
+                          </h3>
+                        </div>
+                      </div>
+
+                      {/* Middle Column: Purchase Financials (Unit price at purchase, quantity, total) */}
+                      <div className="history-row__mid">
+                        {item.type === 'bought' && (
+                          <div className="history-row__meta-pair">
+                            <span className="meta-val">
+                              {item.quantity} × {formatVnd(item.unitPrice)} ₫
+                            </span>
+                            <span className="total-val">
+                              Tổng: {formatVnd(item.quantity * item.unitPrice)} ₫
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Right Column: View Product Action */}
+                      <div className="history-row__right">
+                        <a
+                          href={productUrl}
+                          className="btn-outline history-row__action-btn"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            if (item.productId && onSelectProduct) onSelectProduct(item.productId);
+                          }}
+                          aria-label={`Xem lại sản phẩm ${item.productName || item.productId}`}
+                        >
+                          Xem sản phẩm
+                        </a>
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
-            </article>
+            </section>
           ))}
         </div>
       )}
@@ -236,14 +274,18 @@ export default function MyHistory({ onBack, onSelectProduct }) {
       {items.length > 0 && (
         <footer className="my-history__footer">
           <span className="muted small">
-            Trang {page} / {totalPages} (Tổng {total} bản ghi)
+            Trang {page} / {totalPages} (Tổng {total} hoạt động)
           </span>
           <div className="pagination">
             <button
               type="button"
               className="pagination__btn"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              onClick={() => {
+                setPage((p) => Math.max(1, p - 1));
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
               disabled={page <= 1}
+              aria-label="Trang trước"
             >
               ← Trước
             </button>
@@ -251,8 +293,12 @@ export default function MyHistory({ onBack, onSelectProduct }) {
             <button
               type="button"
               className="pagination__btn"
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              onClick={() => {
+                setPage((p) => Math.min(totalPages, p + 1));
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
               disabled={page >= totalPages}
+              aria-label="Trang sau"
             >
               Sau →
             </button>

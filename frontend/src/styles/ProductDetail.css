@@ -174,12 +174,6 @@
   color: var(--primary);
 }
 
-.product-detail__vat-tag {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  margin-left: 6px;
-}
-
 .product-detail__desc-box {
   border-top: 1px solid var(--border-light);
   padding-top: 14px;

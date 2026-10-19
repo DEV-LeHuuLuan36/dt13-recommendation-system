@@ -12,12 +12,14 @@ import {
 } from '../lib/validate.js';
 import { generateId, PREFIX } from '../lib/ids.js';
 import { publicCategory } from '../lib/mappers.js';
+import { optionalAuth, requireAuth, requireAdmin } from '../middleware/auth.js';
 
 const CATEGORY_BODY_FIELDS = ['name', 'description'];
 const CATEGORY_PATCH_FIELDS = ['name', 'description'];
 
 export function createCategoriesRouter({ neo4jClient }) {
   const router = Router();
+  router.use(optionalAuth(neo4jClient));
   const requireClient = () => {
     if (!neo4jClient) {
       throw Object.assign(new Error('Backend chua ket noi CSDL.'), {
@@ -44,11 +46,10 @@ export function createCategoriesRouter({ neo4jClient }) {
   // POST /api/categories (admin)
   router.post(
     '/',
+    requireAuth(neo4jClient),
+    requireAdmin(),
     asyncHandler(async (req, res) => {
       requireClient();
-      if (!req.auth || req.auth.role !== 'admin') {
-        throw Object.assign(new Error('Yeu cau quyen admin.'), { status: 403, code: 'ADMIN_REQUIRED' });
-      }
       const body = pickAllowed(req.body, CATEGORY_BODY_FIELDS);
       const name = validateName(body.name, 'name');
       const description = validateDescription(body.description);
@@ -73,11 +74,10 @@ export function createCategoriesRouter({ neo4jClient }) {
   // PATCH /api/categories/:categoryId (admin)
   router.patch(
     '/:categoryId',
+    requireAuth(neo4jClient),
+    requireAdmin(),
     asyncHandler(async (req, res) => {
       requireClient();
-      if (!req.auth || req.auth.role !== 'admin') {
-        throw Object.assign(new Error('Yeu cau quyen admin.'), { status: 403, code: 'ADMIN_REQUIRED' });
-      }
       const categoryId = validateId(req.params.categoryId, 'categoryId');
       const body = pickAllowed(req.body, CATEGORY_PATCH_FIELDS);
 
@@ -109,11 +109,10 @@ export function createCategoriesRouter({ neo4jClient }) {
   // DELETE /api/categories/:categoryId (admin)
   router.delete(
     '/:categoryId',
+    requireAuth(neo4jClient),
+    requireAdmin(),
     asyncHandler(async (req, res) => {
       requireClient();
-      if (!req.auth || req.auth.role !== 'admin') {
-        throw Object.assign(new Error('Yeu cau quyen admin.'), { status: 403, code: 'ADMIN_REQUIRED' });
-      }
       const categoryId = validateId(req.params.categoryId, 'categoryId');
       const result = await runInTransaction(neo4jClient, async (tx) => {
         const cur = await tx.run(CRUD.getCategoryById, { categoryId });

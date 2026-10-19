@@ -9,6 +9,7 @@ import {
   NotFoundError,
 } from '../lib/validate.js';
 import { toNumber } from '../lib/mappers.js';
+import { HybridEngine } from '../lib/hybridEngine.js';
 
 // Recommendation routes — customer-only.
 //   GET /api/recommendations/me?limit=
@@ -118,9 +119,61 @@ function reasonForWeighted(boughtCount, viewedCount, score, support) {
 
 export function createRecommendationsRouter({ neo4jClient }) {
   const router = Router();
+  const hybridEngine = neo4jClient ? new HybridEngine(neo4jClient) : null;
+
+  // GET /api/recommendations/feed — Hybrid personalized feed (Customer and Guest)
+  router.get(
+    '/feed',
+    asyncHandler(async (req, res) => {
+      requireClient(neo4jClient);
+      const actor = req.actor || { type: 'guest', id: 'guest_default', role: 'guest' };
+      const visitId = String(req.query.visitId || req.visitId || 'visit_1').slice(0, 50);
+      const feedId = String(req.query.feedId || 'home_feed').slice(0, 50);
+      const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+      const pageSize = Math.min(50, Math.max(1, Number.parseInt(req.query.pageSize, 10) || 10));
+      const categoryId = req.query.categoryId ? String(req.query.categoryId).trim() : null;
+      const priceMin = req.query.priceMin !== undefined && req.query.priceMin !== '' ? Number(req.query.priceMin) : null;
+      const priceMax = req.query.priceMax !== undefined && req.query.priceMax !== '' ? Number(req.query.priceMax) : null;
+      const excludeProductId = req.query.excludeProductId ? validateId(req.query.excludeProductId, 'excludeProductId') : null;
+
+      const feed = await hybridEngine.getHybridFeed({
+        actor,
+        visitId,
+        feedId,
+        page,
+        pageSize,
+        categoryId,
+        priceMin,
+        priceMax,
+        excludeProductId,
+      });
+
+      return res.status(200).json(feed);
+    })
+  );
+
+  // GET /api/recommendations/detail/:productId — Co-bought and Substitutes for detail page
+  router.get(
+    '/detail/:productId',
+    asyncHandler(async (req, res) => {
+      requireClient(neo4jClient);
+      const productId = validateId(req.params.productId, 'productId');
+      const actor = req.actor || { type: 'guest', id: 'guest_default', role: 'guest' };
+      const limit = parseLimit(req.query.limit);
+
+      const data = await hybridEngine.getDetailRecommendations({
+        productId,
+        actor,
+        limit,
+      });
+
+      return res.status(200).json(data);
+    })
+  );
 
   // GET /api/recommendations/me — user_cf over the customer's purchase history.
   // Supports ?formula=weighted or ?includeViews=true for multi-behavior recommendation.
+  // Automatically falls back to multi-behavior user-based branch if pure CF returns 0 items.
   router.get(
     '/me',
     asyncHandler(async (req, res) => {
@@ -129,14 +182,39 @@ export function createRecommendationsRouter({ neo4jClient }) {
       const customerId = req.auth.customerId;
       const limit = parseLimit(req.query.limit);
       const isWeighted = req.query.formula === 'weighted' || req.query.includeViews === 'true';
-      const query = isWeighted ? QUERIES.recommendForMeWeighted : QUERIES.recommendForMe;
+      const excludeProductId = req.query.excludeProductId
+        ? validateId(req.query.excludeProductId, 'excludeProductId')
+        : null;
 
       let result;
+      let method = isWeighted ? 'user_cf_weighted' : 'user_cf';
+      let isFallback = false;
+
       try {
-        result = await runRead(neo4jClient, query, {
-          customerId,
-          limit: toIntParam(limit),
-        });
+        if (isWeighted) {
+          result = await runRead(neo4jClient, QUERIES.recommendForMeWeighted, {
+            customerId,
+            limit: toIntParam(limit + (excludeProductId ? 1 : 0)),
+          });
+        } else {
+          result = await runRead(neo4jClient, QUERIES.recommendForMe, {
+            customerId,
+            limit: toIntParam(limit + (excludeProductId ? 1 : 0)),
+          });
+
+          // Fallback: if pure CF yields no candidates, use user-based multi-behavior branch
+          if (!result.records || result.records.length === 0) {
+            const fallbackRes = await runRead(neo4jClient, QUERIES.recommendForMeFallback, {
+              customerId,
+              limit: toIntParam(limit + (excludeProductId ? 1 : 0)),
+            });
+            if (fallbackRes.records && fallbackRes.records.length > 0) {
+              result = fallbackRes;
+              method = 'user_cf_multibehavior';
+              isFallback = true;
+            }
+          }
+        }
       } catch (err) {
         const message = (err && err.message) ? String(err.message).split('\n')[0] : 'unknown';
         throw Object.assign(new Error(`Loi CSDL khi goi y: ${message}`), {
@@ -145,9 +223,16 @@ export function createRecommendationsRouter({ neo4jClient }) {
         });
       }
 
-      const items = (result.records || []).map((r) => recordToItem(r, reasonForMe, isWeighted));
+      let items = (result.records || []).map((r) => recordToItem(r, reasonForMe, isWeighted));
+      if (excludeProductId) {
+        items = items.filter((it) => it.productId !== excludeProductId);
+      }
+      if (items.length > limit) {
+        items = items.slice(0, limit);
+      }
+
       const body = {
-        method: isWeighted ? 'user_cf_weighted' : 'user_cf',
+        method,
         ...(isWeighted ? { formula: 'score = 3.0 * boughtCount + 1.0 * viewedCount' } : {}),
         limit,
         items,
@@ -157,7 +242,9 @@ export function createRecommendationsRouter({ neo4jClient }) {
             : 'Chua co san pham phu hop tu lich su mua hien tai.')
           : (isWeighted
             ? 'Goi y da hanh vi ket hop mua (x3.0) va xem (x1.0) tu nhung nguoi tuong dong.'
-            : 'Goi y tu lich su mua va nhung nguoi co san pham mua chung.'),
+            : (isFallback
+              ? 'Goi y tu cac san pham duoc mua boi nhung nguoi co tuong tac tuong dong.'
+              : 'Goi y tu lich su mua va nhung nguoi co san pham mua chung.')),
       };
       return res.status(200).json(body);
     })
@@ -239,14 +326,35 @@ export function createRecommendationsRouter({ neo4jClient }) {
       }
       const limit = parseLimit(req.query.limit);
       const isWeighted = req.query.formula === 'weighted' || req.query.includeViews === 'true';
-      const query = isWeighted ? QUERIES.recommendForMeWeighted : QUERIES.recommendForMe;
 
       let result;
+      let method = isWeighted ? 'user_cf_weighted' : 'user_cf';
+      let isFallback = false;
+
       try {
-        result = await runRead(neo4jClient, query, {
-          customerId: targetId,
-          limit: toIntParam(limit),
-        });
+        if (isWeighted) {
+          result = await runRead(neo4jClient, QUERIES.recommendForMeWeighted, {
+            customerId: targetId,
+            limit: toIntParam(limit),
+          });
+        } else {
+          result = await runRead(neo4jClient, QUERIES.recommendForMe, {
+            customerId: targetId,
+            limit: toIntParam(limit),
+          });
+
+          if (!result.records || result.records.length === 0) {
+            const fallbackRes = await runRead(neo4jClient, QUERIES.recommendForMeFallback, {
+              customerId: targetId,
+              limit: toIntParam(limit),
+            });
+            if (fallbackRes.records && fallbackRes.records.length > 0) {
+              result = fallbackRes;
+              method = 'user_cf_multibehavior';
+              isFallback = true;
+            }
+          }
+        }
       } catch (err) {
         const message = (err && err.message) ? String(err.message).split('\n')[0] : 'unknown';
         throw Object.assign(new Error(`Loi CSDL khi goi y: ${message}`), {
@@ -257,7 +365,7 @@ export function createRecommendationsRouter({ neo4jClient }) {
 
       const items = (result.records || []).map((r) => recordToItem(r, reasonForMe, isWeighted));
       const body = {
-        method: isWeighted ? 'user_cf_weighted' : 'user_cf',
+        method,
         targetCustomerId: targetId,
         ...(isWeighted ? { formula: 'score = 3.0 * boughtCount + 1.0 * viewedCount' } : {}),
         limit,
@@ -266,7 +374,9 @@ export function createRecommendationsRouter({ neo4jClient }) {
           ? 'Chua co san pham phu hop tu lich su mua hien tai.'
           : (isWeighted
             ? 'Goi y da hanh vi ket hop mua (x3.0) va xem (x1.0) tu nhung nguoi tuong dong.'
-            : 'Goi y tu lich su mua va nhung nguoi co san pham mua chung.'),
+            : (isFallback
+              ? 'Goi y tu cac san pham duoc mua boi nhung nguoi co tuong tac tuong dong.'
+              : 'Goi y tu lich su mua va nhung nguoi co san pham mua chung.')),
       };
       return res.status(200).json(body);
     })

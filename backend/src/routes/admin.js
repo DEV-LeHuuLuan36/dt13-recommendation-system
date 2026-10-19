@@ -35,6 +35,22 @@ export function createAdminRouter({ neo4jClient = null } = {}) {
     }
   });
 
+  // GET /api/analytics/offline-evaluation — offline benchmarking and metrics
+  router.get('/offline-evaluation', async (req, res, next) => {
+    if (!neo4jClient) {
+      return res.status(503).json({
+        error: { code: 'NEO4J_NOT_CONFIGURED', message: 'Backend chua ket noi CSDL.' },
+      });
+    }
+    try {
+      const { runOfflineEvaluation } = await import('../lib/offlineEvaluation.js');
+      const evalResults = await runOfflineEvaluation(neo4jClient);
+      return res.status(200).json(evalResults);
+    } catch (err) {
+      return next(err);
+    }
+  });
+
   return router;
 }
 

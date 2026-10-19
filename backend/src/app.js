@@ -12,8 +12,10 @@ import { createCustomersRouter } from './routes/customers.js';
 import { createInteractionsRouter } from './routes/interactions.js';
 import { createHistoryRouter } from './routes/history.js';
 import { createRecommendationsRouter } from './routes/recommendations.js';
+import { createEventsRouter } from './routes/events.js';
 import { errorHandler, notFoundHandler } from './middleware/error.js';
-import { requireAuth, requireAdmin } from './middleware/auth.js';
+import { requireAuth, requireAdmin, optionalAuth } from './middleware/auth.js';
+import { resolveActor } from './middleware/actor.js';
 
 // Create an Express app. Dependencies are injectable for unit tests.
 export function createApp({ neo4jClient = null, sessionSecret = 'change-me', env = process.env } = {}) {
@@ -65,15 +67,9 @@ export function createApp({ neo4jClient = null, sessionSecret = 'change-me', env
 
   // Product/Category/Customer/Interactions/History/Recommendations all require an active session;
   // router-level checks further restrict each verb to the right role.
-  const guardedProducts = Router();
-  guardedProducts.use(requireAuth(neo4jClient));
-  guardedProducts.use('/', createProductsRouter({ neo4jClient }));
-  app.use('/api/products', guardedProducts);
-
-  const guardedCategories = Router();
-  guardedCategories.use(requireAuth(neo4jClient));
-  guardedCategories.use('/', createCategoriesRouter({ neo4jClient }));
-  app.use('/api/categories', guardedCategories);
+  // Products and Categories allow public GET for guests; mutations are guarded within routers.
+  app.use('/api/products', createProductsRouter({ neo4jClient }));
+  app.use('/api/categories', createCategoriesRouter({ neo4jClient }));
 
   const guardedCustomers = Router();
   guardedCustomers.use(requireAuth(neo4jClient));
@@ -90,10 +86,18 @@ export function createApp({ neo4jClient = null, sessionSecret = 'change-me', env
   guardedHistory.use('/', createHistoryRouter({ neo4jClient }));
   app.use('/api/me/history', guardedHistory);
 
-  const guardedRecs = Router();
-  guardedRecs.use(requireAuth(neo4jClient));
-  guardedRecs.use('/', createRecommendationsRouter({ neo4jClient }));
-  app.use('/api/recommendations', guardedRecs);
+  // Events and search history support both Customers and Guests with cookie identification
+  const eventsRouter = createEventsRouter({ neo4jClient });
+  app.use('/api/events', optionalAuth(neo4jClient), resolveActor(), eventsRouter);
+  app.use('/api/me', optionalAuth(neo4jClient), resolveActor(), eventsRouter);
+
+  // Recommendations: open to Customers and Guests (internal handlers protect /me for customers)
+  app.use(
+    '/api/recommendations',
+    optionalAuth(neo4jClient),
+    resolveActor(),
+    createRecommendationsRouter({ neo4jClient })
+  );
 
   // Return JSON 404 for any unknown /api route and a unified error envelope.
   app.use('/api', notFoundHandler);

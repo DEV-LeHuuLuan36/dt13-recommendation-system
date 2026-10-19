@@ -4,7 +4,7 @@ import { formatVnd, formatDateTime } from '../utils/format.js';
 import { newEventId } from '../utils/eventId.js';
 import { getProductPlaceholderSvg, getProductImageUrl } from '../utils/imageFallback.js';
 import {
-  setCanonicalUrl,
+  setProductCanonicalUrl,
   setDocumentTitle,
   setMetaDescription,
   setMetaRobots,
@@ -12,6 +12,8 @@ import {
   setProductDetailStructuredData,
 } from '../utils/seo.js';
 import Recommendations from './Recommendations.jsx';
+import DetailRecommendations from './DetailRecommendations.jsx';
+import { extractProductSpecs } from '../utils/format.js';
 import '../styles/ProductDetail.css';
 
 function MainProductImage({ src, alt, category, productId }) {
@@ -52,6 +54,7 @@ export default function ProductDetail({
   onBack,
   onSelectProduct,
   categories = [],
+  onRequireLogin,
 }) {
   const [product, setProduct] = useState(null);
   const [status, setStatus] = useState({ kind: 'loading', error: null });
@@ -102,18 +105,20 @@ export default function ProductDetail({
     return categories.find((c) => c.categoryId === product.categoryId) || null;
   }, [product, categories]);
 
+  const specs = useMemo(() => extractProductSpecs(product), [product]);
+
   // Dynamic Technical SEO for Product Detail
   useEffect(() => {
     if (product) {
       setDocumentTitle(product.name);
       const desc = product.description
         ? product.description.slice(0, 160)
-        : `${product.name} chính hãng tại DT13 Store. Giá bán: ${formatVnd(product.price)} đ. Đồ án NoSQL Neo4j.`;
+        : `${product.name} chính hãng tại Gợi Ý. Giá bán: ${formatVnd(product.price)} đ. Chất lượng đảm bảo, bảo hành chính hãng.`;
       setMetaDescription(desc);
       setMetaRobots('index, follow');
-      setCanonicalUrl();
+      setProductCanonicalUrl(product.productId);
       setOpenGraph({
-        title: `${product.name} - DT13 Store`,
+        title: `${product.name} - Gợi Ý`,
         description: desc,
         image: product.imageUrl,
         type: 'product',
@@ -126,16 +131,24 @@ export default function ProductDetail({
 
   // Record one VIEWED interaction edge in Neo4j
   useEffect(() => {
-    if (!isCustomer || !product || product.active === false) return undefined;
+    if (!product || product.active === false || isAdmin) return undefined;
     if (viewRecordedRef.current) return undefined;
     const evt = newEventId('VIEWED');
     viewEventIdRef.current = evt;
     viewRecordedRef.current = true;
-    api.recordView({ eventId: evt, productId }).catch(() => {
-      /* non-blocking */
-    });
+    const recordPromise = isCustomer
+      ? api.recordView({ eventId: evt, productId })
+      : api.recordViewEvent({ eventId: evt, productId });
+    recordPromise
+      .then(() => {
+        setCoBoughtKey((k) => k + 1);
+        window.dispatchEvent(new CustomEvent('dt13:reco-refresh'));
+      })
+      .catch(() => {
+        /* non-blocking */
+      });
     return undefined;
-  }, [isCustomer, product, productId]);
+  }, [isCustomer, isAdmin, product, productId]);
 
   const onPurchase = async (e) => {
     e.preventDefault();
@@ -153,7 +166,7 @@ export default function ProductDetail({
       setPurchase((p) => ({
         ...p,
         pending: false,
-        message: `Mua hàng thành công! Đã lưu cạnh :BOUGHT (${res.quantity} x ${formatVnd(res.unitPrice)} đ) vào Neo4j.`,
+        message: `Mua hàng thành công! Đơn hàng (${res.quantity} x ${formatVnd(res.unitPrice)} đ) đã được ghi nhận.`,
         error: null,
       }));
       setCoBoughtKey((k) => k + 1);
@@ -226,7 +239,6 @@ export default function ProductDetail({
         {/* Right Column: Information & Purchase */}
         <div className="product-detail__info">
           <div className="product-detail__meta-top">
-            <span className="product-detail__sku">MÃ SẢN PHẨM: <strong>{product.productId}</strong></span>
             {currentCategory && (
               <span className="badge badge--primary">{currentCategory.name}</span>
             )}
@@ -244,18 +256,38 @@ export default function ProductDetail({
             </div>
           )}
 
+          {specs.length > 0 && (
+            <div className="product-detail__specs-list" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', margin: '8px 0 12px 0' }}>
+              {specs.map((sp) => (
+                <span
+                  key={sp}
+                  style={{
+                    background: '#eef2ed',
+                    color: '#162b28',
+                    border: '1px solid #dce5df',
+                    borderRadius: '6px',
+                    fontSize: '0.8125rem',
+                    fontWeight: 600,
+                    padding: '3px 10px',
+                  }}
+                >
+                  {sp}
+                </span>
+              ))}
+            </div>
+          )}
+
           {/* Large Price Display */}
           <div className="product-detail__price-box">
             <span className="product-detail__price-val">{formatVnd(product.price)}</span>
             <span className="product-detail__price-currency">₫</span>
-            <span className="product-detail__vat-tag">(Đã bao gồm VAT)</span>
           </div>
 
           {/* Description */}
           <div className="product-detail__desc-box">
             <h3 className="product-detail__desc-title">Mô tả sản phẩm:</h3>
             <p className="product-detail__desc">
-              {product.description || 'Sản phẩm công nghệ cao cấp phân phối chính hãng tại DT13 Store với chính sách bảo hành 12 tháng.'}
+              {product.description || 'Sản phẩm công nghệ cao cấp phân phối chính hãng.'}
             </p>
           </div>
 
@@ -269,10 +301,10 @@ export default function ProductDetail({
           {isCustomer && product.active !== false && (
             <div className="product-detail__purchase-card">
               <h2 className="product-detail__purchase-title">
-                <span aria-hidden="true">🛒</span> Đặt mua sản phẩm (Mô phỏng Giao dịch)
+                Đặt mua sản phẩm
               </h2>
               <p className="muted small">
-                Thao tác mua sẽ tạo một cạnh <code>:BOUGHT</code> trong Neo4j. Hệ thống sẽ ngay lập tức tính toán lại gợi ý tương quan.
+                Chọn số lượng và nhấn Mua ngay để đặt hàng sản phẩm:
               </p>
 
               <form onSubmit={onPurchase} className="purchase-form">
@@ -315,7 +347,7 @@ export default function ProductDetail({
                     disabled={purchase.pending}
                     aria-busy={purchase.pending}
                   >
-                    {purchase.pending ? 'Đang lưu Neo4j…' : 'Mua ngay (Ghi cạnh :BOUGHT)'}
+                    {purchase.pending ? 'Đang xử lý…' : 'Mua ngay'}
                   </button>
                 </div>
 
@@ -335,6 +367,26 @@ export default function ProductDetail({
             </div>
           )}
 
+          {!profile && product.active !== false && (
+            <div className="product-detail__purchase-card">
+              <h2 className="product-detail__purchase-title">
+                Đặt mua sản phẩm
+              </h2>
+              <p className="muted small">
+                Vui lòng đăng nhập tài khoản khách hàng để tiến hành mua hàng:
+              </p>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => {
+                  if (onRequireLogin) onRequireLogin('productDetail', productId);
+                }}
+              >
+                Đăng nhập để Mua ngay
+              </button>
+            </div>
+          )}
+
           {isCustomer && product.active === false && (
             <div className="error-text">
               Sản phẩm này hiện đang ngừng kinh doanh. Quý khách vui lòng tham khảo các gợi ý tương tự bên dưới.
@@ -343,16 +395,27 @@ export default function ProductDetail({
         </div>
       </div>
 
-      {/* Frequently Co-Bought Recommendations (mode="product") */}
-      {isCustomer && (
-        <section className="product-detail__co-bought" aria-label="Sản phẩm thường được mua cùng">
+      {/* 1. Khách mua sản phẩm này cũng chọn & Lựa chọn tương tự */}
+      <section className="product-detail__recommendations" aria-label="Gợi ý sản phẩm liên quan">
+        <DetailRecommendations
+          key={`detail-reco-${productId}-${coBoughtKey}`}
+          productId={productId}
+          onSelectProduct={onSelectProduct}
+          refreshKey={coBoughtKey}
+        />
+      </section>
+
+      {/* 2. Dành cho bạn (cá nhân hóa, loại trừ sản phẩm đang xem) */}
+      {!isAdmin && (
+        <section className="product-detail__recommendations" aria-label="Dành cho bạn" style={{ marginTop: '24px' }}>
           <Recommendations
-            key={`co-${productId}-${coBoughtKey}`}
-            mode="product"
-            productId={productId}
+            key={`for-you-${productId}-${coBoughtKey}`}
+            mode="hybrid"
+            excludeProductId={productId}
+            customerId={profile?.customerId}
             onSelectProduct={onSelectProduct}
             refreshKey={coBoughtKey}
-            title="Sản phẩm thường được mua cùng"
+            title="Dành cho bạn"
             maxItems={4}
           />
         </section>
