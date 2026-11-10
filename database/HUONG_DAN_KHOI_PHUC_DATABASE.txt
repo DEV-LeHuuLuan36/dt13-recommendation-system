@@ -1,0 +1,66 @@
+================================================================================
+HƯỚNG DẪN KHÔI PHỤC VÀ IMPORT CƠ SỞ DỮ LIỆU ĐỒ THỊ NEO4J - ĐỀ TÀI 13
+HỆ THỐNG GỢI Ý SẢN PHẨM TƯƠNG QUAN (RECOMMENDATION SYSTEM)
+Trường Đại học Công Thương TP.HCM (HUIT) - Khoa Công nghệ Thông tin
+================================================================================
+
+Thư mục này cung cấp đầy đủ các file dữ liệu và kịch bản khởi tạo CSDL Neo4j:
+1. dt13_full_database_dump.cypher: File kịch bản Cypher hoàn chỉnh xuất từ CSDL thực tế.
+   Chứa đầy đủ: Ràng buộc duy nhất (Constraints), 6 Categories, 120 Products, 65 Customers
+   (bao gồm tài khoản Admin và mật khẩu hash scrypt), 120 BELONGS_TO, 374 BOUGHT, 363 VIEWED.
+2. dt13_database_export.json: Dữ liệu CSDL xuất dưới định dạng JSON có cấu trúc.
+3. catalog-reference.json: Bộ dữ liệu mẫu Reference Catalog chuẩn (120 sản phẩm, 60 khách hàng).
+4. schema_constraints.cypher: Kịch bản khởi tạo riêng các ràng buộc toàn vẹn duy nhất và index.
+
+--------------------------------------------------------------------------------
+CÁCH 1: KHỞI TẠO TỰ ĐỘNG BẰNG LỆNH NPM (KHUYẾN NGHỊ CHO MÃ NGUỒN)
+--------------------------------------------------------------------------------
+Tại thư mục gốc của dự án (hoặc thư mục backend):
+1. Đảm bảo dịch vụ Neo4j đang chạy và thông tin kết nối trong file backend/.env chính xác.
+2. Chạy lệnh tạo ràng buộc schema:
+   npm run db:schema
+3. Chạy lệnh nạp dữ liệu Reference Catalog (120 sản phẩm, 60 khách hàng, hành vi mua/xem):
+   npm run db:seed:reference
+
+--------------------------------------------------------------------------------
+CÁCH 2: IMPORT BẰNG CYPHER SHELL TRÊN DÒNG LỆNH (TERMINAL / CMD)
+--------------------------------------------------------------------------------
+Chạy lệnh sau trên terminal (thay thế mật khẩu neo4j nếu có):
+cypher-shell -u neo4j -p 12345678 -d neo4j -f dt13_full_database_dump.cypher
+
+Lệnh này sẽ tự động chạy toàn bộ các khối lệnh Cypher và nạp dữ liệu hoàn tất trong vài giây.
+
+--------------------------------------------------------------------------------
+CÁCH 3: IMPORT BẰNG GIAO DIỆN NEO4J BROWSER (http://localhost:7474)
+--------------------------------------------------------------------------------
+1. Mở trình duyệt truy cập: http://localhost:7474 và đăng nhập vào Neo4j.
+2. Mở file "dt13_full_database_dump.cypher" bằng Notepad hoặc VS Code.
+3. Sao chép và chạy từng khối lệnh theo thứ tự:
+   - Khối 1: Tạo các ràng buộc Constraints (CREATE CONSTRAINT ...)
+   - Khối 2: Khởi tạo 6 Categories (UNWIND [...] MERGE ...)
+   - Khối 3: Khởi tạo 120 Products (UNWIND [...] MERGE ...)
+   - Khối 4: Khởi tạo 65 Customers (UNWIND [...] MERGE ...)
+   - Khối 5: Tạo liên kết BELONGS_TO giữa Product và Category
+   - Khối 6: Tạo quan hệ mua sắm BOUGHT giữa Customer và Product
+   - Khối 7: Tạo quan hệ xem sản phẩm VIEWED giữa Customer và Product
+   - Khối 8: Chạy câu lệnh kiểm tra số lượng để xác nhận.
+
+--------------------------------------------------------------------------------
+KIỂM TRA SỐ LƯỢNG TRONG NEO4J BROWSER:
+--------------------------------------------------------------------------------
+Chạy câu truy vấn Cypher:
+CALL { MATCH (c:Category) RETURN count(c) AS categories }
+CALL { MATCH (p:Product) RETURN count(p) AS products }
+CALL { MATCH (c:Customer) RETURN count(c) AS customers }
+CALL { MATCH ()-[r:BELONGS_TO]->() RETURN count(r) AS belongsTo }
+CALL { MATCH ()-[r:BOUGHT]->() RETURN count(r) AS bought }
+CALL { MATCH ()-[r:VIEWED]->() RETURN count(r) AS viewed }
+RETURN categories, products, customers, belongsTo, bought, viewed;
+
+Kết quả mong đợi:
+- categories: 6
+- products: 120
+- customers: 65 (Admin + 60 khách hàng RC + các tài khoản test)
+- belongsTo: 120
+- bought >= 370 (Vượt định mức barem > 300)
+- viewed >= 360
