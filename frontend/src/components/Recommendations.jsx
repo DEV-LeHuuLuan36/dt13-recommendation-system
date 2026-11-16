@@ -390,32 +390,6 @@ export default function Recommendations({
                 );
               })}
             </div>
-
-            {/* Dropdown xem nhanh chi tiết & lệnh Cypher */}
-            <div className="reco-algo-select-wrapper">
-              <select
-                className="reco-algo-select"
-                value={expandedAlgoId || ''}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (!val) {
-                    setExpandedAlgoId(null);
-                  } else {
-                    setExpandedAlgoId(val);
-                    setSelectedAlgo(val);
-                    setCurrentIndex(0);
-                  }
-                }}
-                aria-label="Chọn xem chi tiết mô hình và câu lệnh Cypher"
-              >
-                <option value="">▼ Xem chi tiết mô hình & câu lệnh Cypher...</option>
-                {ALGORITHM_DEFINITIONS.map((algo) => (
-                  <option key={algo.id} value={algo.id}>
-                    {algo.label}
-                  </option>
-                ))}
-              </select>
-            </div>
           </div>
         </div>
       )}
