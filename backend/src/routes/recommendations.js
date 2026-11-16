@@ -11,10 +11,12 @@ import {
 import { toNumber } from '../lib/mappers.js';
 import { HybridEngine } from '../lib/hybridEngine.js';
 
-// Recommendation routes — customer-only.
-//   GET /api/recommendations/me?limit=
+// Recommendation routes — customer & demo friendly.
+//   GET /api/recommendations/me?limit=&formula=
+//   GET /api/recommendations/trending?limit=
+//   GET /api/recommendations/cross-category?limit=
+//   GET /api/recommendations/feed
 //   GET /api/recommendations/products/:productId?limit=
-// customerId always comes from the session, never from the query/body.
 
 const DEFAULT_LIMIT = 5;
 const MIN_LIMIT = 1;
@@ -97,24 +99,24 @@ function recordToItem(record, reasonFor, isWeighted = false) {
 function reasonForMe(support, score) {
   const s = Number(support);
   const sc = Number(score);
-  const ngMua = s === 1 ? '1 nguoi' : `${s} nguoi`;
-  if (s <= 0) return 'Co the phu hop voi ban.';
-  return `Co ${ngMua} mua chung voi ban da mua san pham nay; tong trong so la ${sc}.`;
+  const ngMua = s === 1 ? '1 người' : `${s} người`;
+  if (s <= 0) return 'Có thể phù hợp với bạn.';
+  return `Có ${ngMua} mua chung với bạn đã mua sản phẩm này; tổng trọng số là ${sc}.`;
 }
 
 function reasonForCoBought(support) {
   const s = Number(support);
-  if (s <= 0) return 'Co the phu hop voi san pham dang xem.';
-  const ngMua = s === 1 ? '1 nguoi' : `${s} nguoi`;
-  return `${ngMua} da mua san pham dang xem va cung da mua san pham nay.`;
+  if (s <= 0) return 'Có thể phù hợp với sản phẩm đang xem.';
+  const ngMua = s === 1 ? '1 người' : `${s} người`;
+  return `${ngMua} đã mua sản phẩm đang xem và cũng đã mua sản phẩm này.`;
 }
 
 function reasonForWeighted(boughtCount, viewedCount, score, support) {
   const parts = [];
-  if (boughtCount > 0) parts.push(`${boughtCount} nguoi mua (x3.0 = ${boughtCount * 3}d)`);
-  if (viewedCount > 0) parts.push(`${viewedCount} luot xem (x1.0 = ${viewedCount * 1}d)`);
-  if (parts.length === 0) return 'Goi y da hanh vi (mua x3.0 + xem x1.0).';
-  return `Goi y da hanh vi: ${parts.join(', ')}. Tong diem: ${score} (Do ho tro: ${support}).`;
+  if (boughtCount > 0) parts.push(`${boughtCount} người mua (x3.0 = ${boughtCount * 3}đ)`);
+  if (viewedCount > 0) parts.push(`${viewedCount} lượt xem (x1.0 = ${viewedCount * 1}đ)`);
+  if (parts.length === 0) return 'Gợi ý đa hành vi (mua x3.0 + xem x1.0).';
+  return `Gợi ý đa hành vi: ${parts.join(', ')}. Tổng điểm: ${score} (Độ hỗ trợ: ${support}).`;
 }
 
 export function createRecommendationsRouter({ neo4jClient }) {
@@ -173,13 +175,28 @@ export function createRecommendationsRouter({ neo4jClient }) {
 
   // GET /api/recommendations/me — user_cf over the customer's purchase history.
   // Supports ?formula=weighted or ?includeViews=true for multi-behavior recommendation.
+  // Supports ?demoCustomerId= to preview recommendations without authentication during presentation/defense.
   // Automatically falls back to multi-behavior user-based branch if pure CF returns 0 items.
   router.get(
     '/me',
     asyncHandler(async (req, res) => {
       requireClient(neo4jClient);
-      requireCustomerRole(req);
-      const customerId = req.auth.customerId;
+      let customerId;
+      let isDemo = false;
+      if (req.auth && req.auth.role === 'customer') {
+        customerId = req.auth.customerId;
+      } else if (req.query.demoCustomerId) {
+        customerId = validateId(req.query.demoCustomerId, 'demoCustomerId');
+        isDemo = true;
+      } else if (req.query.customerId) {
+        customerId = validateId(req.query.customerId, 'customerId');
+        isDemo = true;
+      } else {
+        // Fallback for live demo preview to RC_C001 so instructors/guests see the algorithm live
+        customerId = 'RC_C001';
+        isDemo = true;
+      }
+
       const limit = parseLimit(req.query.limit);
       const isWeighted = req.query.formula === 'weighted' || req.query.includeViews === 'true';
       const excludeProductId = req.query.excludeProductId
@@ -233,20 +250,153 @@ export function createRecommendationsRouter({ neo4jClient }) {
 
       const body = {
         method,
+        customerId,
+        isDemo,
         ...(isWeighted ? { formula: 'score = 3.0 * boughtCount + 1.0 * viewedCount' } : {}),
         limit,
         items,
         reason: items.length === 0
           ? (isWeighted
-            ? 'Chua co san pham phu hop tu lich su mua va xem hien tai.'
-            : 'Chua co san pham phu hop tu lich su mua hien tai.')
+            ? 'Chưa có sản phẩm phù hợp từ lịch sử mua và xem hiện tại.'
+            : 'Chưa có sản phẩm phù hợp từ lịch sử mua hiện tại.')
           : (isWeighted
-            ? 'Goi y da hanh vi ket hop mua (x3.0) va xem (x1.0) tu nhung nguoi tuong dong.'
+            ? 'Gợi ý đa hành vi kết hợp mua (x3.0) và xem (x1.0) từ những người tương đồng.'
             : (isFallback
-              ? 'Goi y tu cac san pham duoc mua boi nhung nguoi co tuong tac tuong dong.'
-              : 'Goi y tu lich su mua va nhung nguoi co san pham mua chung.')),
+              ? 'Gợi ý từ các sản phẩm được mua bởi những người có tương tác tương đồng.'
+              : 'Gợi ý từ lịch sử mua và những người có sản phẩm mua chung.')),
       };
       return res.status(200).json(body);
+    })
+  );
+
+  // GET /api/recommendations/trending — Popular / cold-start fallback
+  router.get(
+    '/trending',
+    asyncHandler(async (req, res) => {
+      requireClient(neo4jClient);
+      const limit = parseLimit(req.query.limit);
+      const result = await runRead(neo4jClient, `
+        MATCH (c:Customer { role: 'customer', active: true })-[r:BOUGHT]->(p:Product)
+        WHERE p.active = true
+        WITH p, count(DISTINCT c) AS buyers, count(r) AS orderCount
+        RETURN p.productId AS productId,
+               p.name AS name,
+               p.price AS price,
+               p.imageUrl AS imageUrl,
+               p.brand AS brand,
+               p.rating AS rating,
+               buyers AS support,
+               buyers AS score
+        ORDER BY buyers DESC, p.rating DESC, p.productId ASC
+        LIMIT $limit
+      `, { limit: toIntParam(limit) });
+
+      const items = (result.records || []).map((r) => ({
+        productId: r.get('productId'),
+        name: r.get('name'),
+        price: toNumber(r.get('price')),
+        imageUrl: r.get('imageUrl'),
+        brand: r.get('brand'),
+        rating: toNumber(r.get('rating')) || 5.0,
+        score: toNumber(r.get('score')),
+        support: toNumber(r.get('support')),
+        source: 'trending',
+        reason: `Sản phẩm thịnh hành: ${toNumber(r.get('support'))} khách hàng đã mua, đánh giá cao.`,
+      }));
+
+      return res.status(200).json({
+        method: 'trending',
+        description: 'Thuật toán gợi ý sản phẩm thịnh hành (Trending / Popularity) giải quyết Cold-Start',
+        limit,
+        items,
+      });
+    })
+  );
+
+  // GET /api/recommendations/cross-category — Serendipity cross-category recommendations
+  router.get(
+    '/cross-category',
+    asyncHandler(async (req, res) => {
+      requireClient(neo4jClient);
+      const limit = parseLimit(req.query.limit);
+      const customerId = (req.auth && req.auth.role === 'customer')
+        ? req.auth.customerId
+        : (req.query.demoCustomerId || req.query.customerId || 'RC_C001');
+
+      const result = await runRead(neo4jClient, `
+        MATCH (me:Customer { customerId: $customerId })-[:BOUGHT]->(p1:Product)-[:BELONGS_TO]->(c1:Category)
+        MATCH (peer:Customer)-[:BOUGHT]->(p1)
+        WHERE peer <> me
+        MATCH (peer)-[:BOUGHT]->(p2:Product)-[:BELONGS_TO]->(c2:Category)
+        WHERE p2.active = true AND c2 <> c1
+          AND NOT (me)-[:BOUGHT]->(p2)
+        WITH p2, c2, c1, count(DISTINCT peer) AS coBuyerCount
+        ORDER BY coBuyerCount DESC, p2.rating DESC
+        RETURN p2.productId AS productId,
+               p2.name AS name,
+               p2.price AS price,
+               p2.imageUrl AS imageUrl,
+               p2.brand AS brand,
+               c2.name AS categoryName,
+               c1.name AS fromCategoryName,
+               coBuyerCount AS support,
+               coBuyerCount AS score
+        LIMIT $limit
+      `, { customerId, limit: toIntParam(limit) });
+
+      let items = (result.records || []).map((r) => ({
+        productId: r.get('productId'),
+        name: r.get('name'),
+        price: toNumber(r.get('price')),
+        imageUrl: r.get('imageUrl'),
+        brand: r.get('brand'),
+        categoryName: r.get('categoryName'),
+        score: toNumber(r.get('score')),
+        support: toNumber(r.get('support')),
+        source: 'cross_category',
+        isSerendipity: true,
+        reason: `Khám phá chéo danh mục: Khách mua ${r.get('fromCategoryName') || 'sản phẩm'} thường mua kèm ${r.get('categoryName') || 'món này'}.`,
+      }));
+
+      if (items.length === 0) {
+        const globalRes = await runRead(neo4jClient, `
+          MATCH (c:Customer)-[:BOUGHT]->(p1:Product)-[:BELONGS_TO]->(cat1:Category)
+          MATCH (c)-[:BOUGHT]->(p2:Product)-[:BELONGS_TO]->(cat2:Category)
+          WHERE cat1 <> cat2 AND p2.active = true
+          WITH p2, cat2, count(DISTINCT c) AS buyers
+          ORDER BY buyers DESC, p2.rating DESC
+          RETURN p2.productId AS productId,
+                 p2.name AS name,
+                 p2.price AS price,
+                 p2.imageUrl AS imageUrl,
+                 p2.brand AS brand,
+                 cat2.name AS categoryName,
+                 buyers AS support,
+                 buyers AS score
+          LIMIT $limit
+        `, { limit: toIntParam(limit) });
+
+        items = (globalRes.records || []).map((r) => ({
+          productId: r.get('productId'),
+          name: r.get('name'),
+          price: toNumber(r.get('price')),
+          imageUrl: r.get('imageUrl'),
+          brand: r.get('brand'),
+          categoryName: r.get('categoryName'),
+          score: toNumber(r.get('score')),
+          support: toNumber(r.get('support')),
+          source: 'cross_category',
+          isSerendipity: true,
+          reason: `Khám phá chéo danh mục (Serendipity): Sản phẩm nhóm ${r.get('categoryName') || 'khác'} thường được mua kèm.`,
+        }));
+      }
+
+      return res.status(200).json({
+        method: 'cross_category',
+        description: 'Thuật toán đột phá chéo danh mục (Serendipity) - Mô hình Bán cần câu -> Bán thuyền',
+        limit,
+        items,
+      });
     })
   );
 

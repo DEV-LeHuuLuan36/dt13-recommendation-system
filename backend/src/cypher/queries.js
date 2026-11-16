@@ -625,6 +625,7 @@ export const CRUD = {
       CASE WHEN $targetPrice IS NOT NULL AND ($sort IS NULL OR $sort = '' OR $sort = 'relevance')
            THEN abs(coalesce(p.price, 0) - toInteger($targetPrice))
       END ASC,
+      CASE WHEN p.source = 'CellphoneS' THEN 0 ELSE 1 END ASC,
       p.productId ASC
     SKIP toInteger($skip) LIMIT toInteger($limit)
     RETURN p, c

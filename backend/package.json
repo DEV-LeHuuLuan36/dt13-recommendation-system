@@ -6,7 +6,7 @@
   "description": "Express backend for the product recommendation service",
   "main": "src/server.js",
   "scripts": {
-    "dev": "node --watch src/server.js",
+    "dev": "node src/server.js",
     "start": "node src/server.js",
     "lint": "eslint src scripts test --max-warnings 0",
     "check:neo4j": "node scripts/check-neo4j.js",

@@ -750,7 +750,8 @@ export default function ProductList({
                 customerId={profile?.customerId}
                 onSelectProduct={onSelectProduct}
                 refreshKey={recoRefreshKey}
-                title="Dành cho bạn"
+                title="Gợi ý sản phẩm thông minh"
+                showAlgorithmFilter={true}
                 maxItems={4}
                 showCrossCategory={false}
               />
@@ -907,6 +908,7 @@ export default function ProductList({
                 onSelectProduct={onSelectProduct}
                 refreshKey={recoRefreshKey}
                 title="Lựa chọn tương tự"
+                showAlgorithmFilter={false}
                 maxItems={4}
                 showCrossCategory={false}
               />
@@ -924,6 +926,7 @@ export default function ProductList({
             onSelectProduct={onSelectProduct}
             refreshKey={recoRefreshKey}
             title="Tiếp tục khám phá"
+            showAlgorithmFilter={false}
             maxItems={4}
             showCrossCategory={false}
           />

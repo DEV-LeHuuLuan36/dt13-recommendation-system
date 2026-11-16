@@ -2,31 +2,37 @@ import { useState } from 'react';
 import { loginRequest } from '../api/auth.js';
 import '../styles/Login.css';
 
-// Demo accounts for quickly populating the email field
+// Demo accounts for quickly populating the email and password fields
 const DEMO_ACCOUNTS = [
   {
-    label: 'Quản trị viên',
+    label: 'Quản trị viên (ADMIN_001)',
     email: 'admin@example.test',
+    password: 'Admin@001',
   },
   {
-    label: 'Khách hàng 01',
+    label: 'Khách hàng 01 (RC_C001)',
     email: 'nguyen.minh.an.001@example.test',
+    password: 'RcCust@001',
   },
   {
-    label: 'Khách hàng 02',
+    label: 'Khách hàng 02 (RC_C002)',
     email: 'tran.ngoc.bao.002@example.test',
+    password: 'RcCust@002',
   },
   {
-    label: 'Khách hàng 03',
+    label: 'Khách hàng 03 (RC_C003)',
     email: 'le.hoai.chi.003@example.test',
+    password: 'RcCust@003',
   },
   {
-    label: 'Khách hàng 04',
+    label: 'Khách hàng 04 (RC_C004)',
     email: 'pham.quoc.dung.004@example.test',
+    password: 'RcCust@004',
   },
   {
-    label: 'Khách hàng 05',
+    label: 'Khách hàng 05 (RC_C005)',
     email: 'hoang.my.duyen.005@example.test',
+    password: 'RcCust@005',
   },
 ];
 
@@ -115,7 +121,7 @@ export default function LoginForm({ onLoggedIn }) {
               className="login-quick__card"
               onClick={() => {
                 setEmail(acc.email);
-                setPassword('');
+                setPassword(acc.password);
                 setError(null);
               }}
               title={`Đăng nhập ${acc.label}`}

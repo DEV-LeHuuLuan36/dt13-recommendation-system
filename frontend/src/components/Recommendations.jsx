@@ -7,6 +7,102 @@ import '../styles/Recommendations.css';
 
 const VISIBLE_COUNT = 4;
 
+const ALGORITHM_DEFINITIONS = [
+  {
+    id: 'hybrid',
+    label: '🌟 Mô hình lai Hybrid (7 tầng)',
+    shortLabel: '🌟 Hybrid 7 tầng',
+    badge: 'Hybrid Engine (7 tầng)',
+    tagline: 'Tổng hợp 7 tầng: Ý định NLP (<5ms) + Lọc cộng tác + Đa hành vi + Phân rã thời gian + Serendipity',
+    formula: 'Score = ∑ (wi · Score_i) × 2^(-Δt / λ) - Penalty',
+    cypher: `// Giai đoạn 1-7: Thu thập đa luồng từ 6 nguồn đồ thị Neo4j:
+// 1. Source A: User-based CF (w = 2.5)
+// 2. Source B: Đa hành vi Mua + Xem (w = 2.0)
+// 3. Source C: Ý định tìm kiếm tiếng Việt NLP (w = 5.0 / 1.8)
+// 4. Source D: Co-bought cùng giỏ hàng (w = 1.5)
+// 5. Source Cross-Category: Serendipity chéo danh mục (w = 1.8)
+// 6. Source F: Fallback / Thịnh hành (w = 0.3)
+// Áp dụng Time-decay 2^(-Δt / λ) và Anti-fatigue Penalty`,
+    description: 'Động cơ gợi ý lai kết hợp đồng thời lịch sử mua, lịch sử xem, ý định tìm kiếm tiếng Việt bóc tách ngân sách và phân rã thời gian theo hàm mũ để xếp hạng ứng viên tối ưu.',
+  },
+  {
+    id: 'user_cf',
+    label: '👥 Lọc cộng tác (User-CF)',
+    shortLabel: '👥 User-based CF',
+    badge: 'Lọc cộng tác User-CF',
+    tagline: 'Lọc cộng tác dựa trên khách hàng có cùng lịch sử mua sắm',
+    formula: 'Support(u, p) = |{ v ∈ N(u) | v đã mua p }|',
+    cypher: `MATCH (me:Customer { customerId: $customerId, role: 'customer' })-[:BOUGHT]->(p1:Product)
+MATCH (other:Customer { role: 'customer' })-[:BOUGHT]->(p1)
+WHERE other <> me
+MATCH (other)-[:BOUGHT]->(rec:Product)
+WHERE rec.active = true AND NOT (me)-[:BOUGHT]->(rec)
+WITH rec, count(DISTINCT other) AS support, sum(1.0) AS score
+RETURN rec.productId AS productId, rec.name AS name, rec.price AS price,
+       rec.imageUrl AS imageUrl, score, support
+ORDER BY score DESC, support DESC
+LIMIT $limit`,
+    description: 'Duyệt đồ thị 2 bước nhảy (2 hops): Tìm những khách hàng có chung sản phẩm đã mua với bạn, sau đó gợi ý các sản phẩm họ đã mua mà bạn chưa có.',
+  },
+  {
+    id: 'weighted',
+    label: '⚡ Đa hành vi (Mua x3.0 + Xem x1.0)',
+    shortLabel: '⚡ Đa hành vi (Trọng số)',
+    badge: 'Đa hành vi (Mua x3 + Xem x1)',
+    tagline: 'Lọc cộng tác mở rộng kết hợp trọng số Mua và Xem',
+    formula: 'Score = 3.0 × BoughtCount + 1.0 × ViewedCount',
+    cypher: `MATCH (c1:Customer { customerId: $customerId, role: 'customer' })-[r1]->(p1:Product)
+WHERE (type(r1) = 'BOUGHT' OR type(r1) = 'VIEWED')
+MATCH (c2:Customer { role: 'customer' })-[r2]->(p1)
+WHERE c2 <> c1 AND (type(r2) = 'BOUGHT' OR type(r2) = 'VIEWED')
+MATCH (c2)-[r3]->(rec:Product)
+WHERE (type(r3) = 'BOUGHT' OR type(r3) = 'VIEWED')
+  AND rec.active = true AND NOT (c1)-[:BOUGHT]->(rec)
+WITH rec, count(DISTINCT c2) AS support,
+     count(CASE WHEN type(r3) = 'BOUGHT' THEN 1 END) AS boughtCount,
+     count(CASE WHEN type(r3) = 'VIEWED' THEN 1 END) AS viewedCount
+RETURN rec.productId AS productId, rec.name AS name, rec.price AS price,
+       (boughtCount * 3.0 + viewedCount * 1.0) AS score, support
+ORDER BY score DESC, support DESC
+LIMIT $limit`,
+    description: 'Gán trọng số đa hành vi: Mỗi lượt Mua được tính 3.0 điểm, mỗi lượt Xem tính 1.0 điểm từ những khách hàng có tương tác tương đồng trên đồ thị.',
+  },
+  {
+    id: 'cross_category',
+    label: '🧭 Khám phá chéo (Serendipity)',
+    shortLabel: '🧭 Chéo Serendipity',
+    badge: 'Khám phá chéo (Serendipity)',
+    tagline: 'Gợi ý đột phá chéo danh mục: "Bán cần câu ➔ Bán thuyền"',
+    formula: 'Category(rec) ≠ Category(anchor)  ∧  CoBuyerCount ≥ 1',
+    cypher: `MATCH (me:Customer { customerId: $customerId })-[:BOUGHT]->(p1:Product)-[:BELONGS_TO]->(c1:Category)
+MATCH (peer:Customer)-[:BOUGHT]->(p1) WHERE peer <> me
+MATCH (peer)-[:BOUGHT]->(p2:Product)-[:BELONGS_TO]->(c2:Category)
+WHERE p2.active = true AND c2 <> c1 AND NOT (me)-[:BOUGHT]->(p2)
+WITH p2, c2, c1, count(DISTINCT peer) AS coBuyerCount
+ORDER BY coBuyerCount DESC, p2.rating DESC
+RETURN p2.productId AS productId, p2.name AS name, p2.price AS price,
+       c2.name AS categoryName, coBuyerCount AS support
+LIMIT $limit`,
+    description: 'Phá vỡ bẫy "Bong bóng thông tin" (Filter Bubble). Khi khách mua Laptop, hệ thống phân tích giỏ hàng mua kèm để gợi ý Bàn phím hoặc Phụ kiện chéo danh mục.',
+  },
+  {
+    id: 'trending',
+    label: '🔥 Thịnh hành (Cold-Start)',
+    shortLabel: '🔥 Thịnh hành Trending',
+    badge: 'Thịnh hành (Cold-Start)',
+    tagline: 'Sản phẩm phổ biến và đánh giá cao (Giải pháp Cold-Start)',
+    formula: 'Score = Count(Distinct Buyers) × Rating',
+    cypher: `MATCH (c:Customer { role: 'customer', active: true })-[r:BOUGHT]->(p:Product)
+WHERE p.active = true
+WITH p, count(DISTINCT c) AS buyers, count(r) AS orderCount
+RETURN p.productId AS productId, p.name AS name, p.price AS price,
+       buyers AS support, buyers AS score
+ORDER BY buyers DESC, p.rating DESC, p.productId ASC
+LIMIT $limit`,
+    description: 'Giải pháp cho bài toán khởi đầu lạnh (Cold-Start Problem) khi người dùng mới chưa có bất kỳ dữ liệu lịch sử nào trên hệ thống đồ thị.',
+  },
+];
+
 export default function Recommendations({
   mode = 'hybrid',
   productId = null,
@@ -17,7 +113,9 @@ export default function Recommendations({
   refreshKey = 0,
   maxItems = 8,
   showCrossCategory = false,
+  showAlgorithmFilter = true,
 }) {
+  const [selectedAlgo, setSelectedAlgo] = useState('hybrid');
   const [data, setData] = useState(null);
   const [status, setStatus] = useState({ kind: 'loading', error: null });
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -28,6 +126,10 @@ export default function Recommendations({
   useEffect(() => {
     activeCustomerRef.current = customerId;
   }, [customerId]);
+
+  const currentAlgoDef = useMemo(() => {
+    return ALGORITHM_DEFINITIONS.find((a) => a.id === selectedAlgo) || ALGORITHM_DEFINITIONS[0];
+  }, [selectedAlgo]);
 
   const controllerRef = useRef(null);
   if (!controllerRef.current) {
@@ -43,10 +145,41 @@ export default function Recommendations({
         setStatus({ kind: 'error', error: err.message });
         setData(null);
       },
-      fetchFn: (params, opts) => {
-        if (mode === 'me') {
-          return api.recommendForMe(params, opts);
+      fetchFn: async (params, opts) => {
+        const cId = activeCustomerRef.current;
+        const algo = params.algorithm || 'hybrid';
+
+        if (algo === 'user_cf') {
+          return api.recommendForMe({
+            limit: params.limit,
+            demoCustomerId: cId || 'RC_C001',
+            excludeProductId: params.excludeProductId,
+          }, opts);
         }
+
+        if (algo === 'weighted') {
+          return api.recommendForMe({
+            limit: params.limit,
+            formula: 'weighted',
+            demoCustomerId: cId || 'RC_C001',
+            excludeProductId: params.excludeProductId,
+          }, opts);
+        }
+
+        if (algo === 'cross_category') {
+          return api.getCrossCategory({
+            limit: params.limit,
+            demoCustomerId: cId || 'RC_C001',
+          }, opts);
+        }
+
+        if (algo === 'trending') {
+          return api.getTrending({
+            limit: params.limit,
+          }, opts);
+        }
+
+        // Default: hybrid
         return api.getHybridFeed({
           ...params,
           visitId: getVisitId(),
@@ -58,6 +191,7 @@ export default function Recommendations({
 
   const fetchData = useCallback(async () => {
     const params = {
+      algorithm: selectedAlgo,
       limit: Math.max(8, maxItems),
       pageSize: Math.max(8, maxItems),
     };
@@ -66,7 +200,7 @@ export default function Recommendations({
       params.excludeProductId = effectiveExcludeId;
     }
     await controllerRef.current.fetch(params);
-  }, [maxItems, excludeProductId, mode, productId]);
+  }, [selectedAlgo, maxItems, excludeProductId, mode, productId]);
 
   useEffect(() => {
     setData(null);
@@ -74,7 +208,7 @@ export default function Recommendations({
     return () => {
       controllerRef.current?.abort();
     };
-  }, [fetchData, refreshKey, customerId]);
+  }, [fetchData, refreshKey, customerId, selectedAlgo]);
 
   const handleDismiss = useCallback((pId) => {
     setDismissedMap((prev) => ({ ...prev, [pId]: true }));
@@ -112,13 +246,33 @@ export default function Recommendations({
     setCurrentIndex((prev) => Math.min(items.length - VISIBLE_COUNT, prev + 1));
   }, [items.length]);
 
-  // If there are no items and not loading, don't show empty block on store page
-  if (status.kind !== 'loading' && items.length === 0) {
-    return null;
-  }
-
-  // Slice 4 items on desktop
+  // Sliced items for carousel
   const desktopItems = items.slice(currentIndex, currentIndex + VISIBLE_COUNT);
+
+  // Helper badge text for each item based on current algorithm
+  const getItemBadge = (it) => {
+    if (selectedAlgo === 'weighted') {
+      const b = it.boughtCount ?? 0;
+      const v = it.viewedCount ?? 0;
+      return `⚡ ${b} mua + ${v} xem (${it.score || 0}đ)`;
+    }
+    if (selectedAlgo === 'user_cf') {
+      const sup = it.support ?? 1;
+      return `👥 ${sup} người cùng mua (${it.score || sup}đ)`;
+    }
+    if (selectedAlgo === 'cross_category') {
+      return `🧭 Mua kèm chéo (${it.categoryName || 'Phụ kiện'})`;
+    }
+    if (selectedAlgo === 'trending') {
+      return `🔥 ${it.support || 9} khách đã mua`;
+    }
+    // Hybrid
+    if (it.isSerendipity) return '🧭 Serendipity';
+    if (it.source === 'user_cf') return '👥 User-CF';
+    if (it.source === 'multibehavior') return '⚡ Đa hành vi';
+    if (it.source === 'search') return '🔍 Ý định tìm kiếm';
+    return `🌟 Hybrid (${Math.round((it.score || 0.8) * 100) / 100})`;
+  };
 
   return (
     <div className="reco-block" aria-label={title}>
@@ -131,18 +285,25 @@ export default function Recommendations({
         </div>
       )}
 
-      {/* Clean Header: Short Title and simple navigation buttons */}
+      {/* 1. Header with Title & Carousel Nav */}
       <div className="reco-block__header">
-        <h2 className="reco-block__title">{title}</h2>
+        <div className="reco-block__header-left">
+          <h2 className="reco-block__title">{title}</h2>
+          <span className="reco-algo-pill">{currentAlgoDef.badge}</span>
+        </div>
 
         {items.length > VISIBLE_COUNT && (
           <div className="reco-carousel-nav" role="toolbar" aria-label="Điều hướng gợi ý">
+            <span className="reco-page-indicator muted small">
+              {currentIndex + 1} - {Math.min(currentIndex + VISIBLE_COUNT, items.length)} / {items.length}
+            </span>
             <button
               type="button"
               className="reco-nav-btn"
               onClick={handlePrev}
               disabled={currentIndex <= 0}
               aria-label="Xem sản phẩm trước"
+              title="Xem sản phẩm trước"
             >
               ‹
             </button>
@@ -152,6 +313,7 @@ export default function Recommendations({
               onClick={handleNext}
               disabled={currentIndex >= items.length - VISIBLE_COUNT}
               aria-label="Xem sản phẩm kế tiếp"
+              title="Xem sản phẩm kế tiếp"
             >
               ›
             </button>
@@ -159,23 +321,96 @@ export default function Recommendations({
         )}
       </div>
 
-      {status.kind === 'loading' && !data && (
-        <div className="reco-loading" role="status">
-          <div className="spinner small" aria-hidden="true" />
-          <p className="muted small">Đang tải gợi ý…</p>
+      {/* 2. ALGORITHM FILTER BUTTONS (TÙY CHỌN BỘ LỌC THUẬT TOÁN) */}
+      {showAlgorithmFilter && (
+        <div className="reco-algo-selector" role="tablist" aria-label="Chọn thuật toán gợi ý">
+          <div className="reco-algo-tabs">
+            {ALGORITHM_DEFINITIONS.map((algo) => {
+              const isActive = selectedAlgo === algo.id;
+              return (
+                <button
+                  key={algo.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  className={`reco-algo-btn ${isActive ? 'reco-algo-btn--active' : ''}`}
+                  onClick={() => {
+                    setSelectedAlgo(algo.id);
+                    setCurrentIndex(0);
+                  }}
+                  title={algo.tagline}
+                >
+                  <span className="reco-algo-btn__label">{algo.shortLabel}</span>
+                  {isActive && <span className="reco-algo-btn__dot" aria-hidden="true" />}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
-      {/* Grid on Desktop (4 columns) & Horizontal Scroll-Snap on Mobile */}
+      {/* 3. ALGORITHM EXPLANATION CARD (THUYẾT MINH THUẬT TOÁN CHO GIÁO VIÊN) */}
+      {showAlgorithmFilter && (
+        <div className="reco-explainer-card">
+          <div className="reco-explainer-card__top">
+            <div className="reco-explainer-card__info">
+              <div className="reco-explainer-card__title">
+                <strong>{currentAlgoDef.label}</strong>
+                <span className="reco-formula-badge">{currentAlgoDef.formula}</span>
+              </div>
+              <p className="reco-explainer-card__desc">{currentAlgoDef.description}</p>
+            </div>
+
+            
+          </div>
+
+          <div className="reco-explainer-card__meta">
+            <span className="reco-meta-tag">
+              👤 Đối tượng phân tích:{' '}
+              {customerId ? (
+                <strong>Tài khoản hiện tại ({customerId})</strong>
+              ) : (
+                <strong>Mô phỏng đồ thị: Nguyễn Minh An (RC_C001)</strong>
+              )}
+            </span>
+            <span className="reco-meta-tag">
+              📊 Tổng ứng viên lọc: <strong>{items.length} sản phẩm</strong>
+            </span>
+          </div>
+
+          
+        </div>
+      )}
+
+      {/* 4. Loading state */}
+      {status.kind === 'loading' && !data && (
+        <div className="reco-loading" role="status">
+          <div className="spinner small" aria-hidden="true" />
+          <p className="muted small">Đang thực thi thuật toán trên đồ thị Neo4j…</p>
+        </div>
+      )}
+
+      {/* 5. Empty state */}
+      {status.kind !== 'loading' && items.length === 0 && (
+        <div className="reco-empty-notice">
+          <p>Chưa tìm thấy ứng viên phù hợp cho thuật toán này với bộ dữ liệu hiện tại.</p>
+        </div>
+      )}
+
+      {/* 6. Product Cards Grid */}
       {items.length > 0 && (
         <div className="reco-track-wrapper">
           <div className="reco-cards-track">
             {desktopItems.map((it, idx) => (
               <div key={it.productId} className="reco-card-item">
+                {/* Algorithm reason banner directly above card */}
+                <div className="reco-item-algo-banner" title={it.reason || currentAlgoDef.tagline}>
+                  <span className="reco-item-algo-text">{getItemBadge(it)}</span>
+                </div>
                 <ProductCard
                   item={it}
                   position={currentIndex + idx + 1}
-                  feedId="home_feed"
+                  feedId={`algo_${selectedAlgo}`}
                   onSelectProduct={onSelectProduct}
                   onDismiss={handleDismiss}
                   showMenu={true}
@@ -186,16 +421,21 @@ export default function Recommendations({
         </div>
       )}
 
-      {/* Cross-Category Add-on Block: "Có thể bạn cũng cần" (controlled by showCrossCategory prop) */}
-      {showCrossCategory && crossCategoryItems.length > 0 && (
+      {/* 7. Cross-Category Add-on Block (if enabled for hybrid) */}
+      {showCrossCategory && selectedAlgo === 'hybrid' && crossCategoryItems.length > 0 && (
         <div className="reco-sub-section" style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid #dce5df' }}>
           <div className="reco-block__header" style={{ marginBottom: '12px', border: 'none', padding: 0 }}>
-            <h3 className="reco-block__title" style={{ fontSize: '1.125rem' }}>Có thể bạn cũng cần</h3>
+            <h3 className="reco-block__title" style={{ fontSize: '1.125rem' }}>
+              🧭 Khám phá chéo danh mục (Serendipity)
+            </h3>
           </div>
           <div className="reco-track-wrapper">
             <div className="reco-cards-track">
               {crossCategoryItems.slice(0, VISIBLE_COUNT).map((it, idx) => (
                 <div key={it.productId} className="reco-card-item">
+                  <div className="reco-item-algo-banner">
+                    <span className="reco-item-algo-text">🧭 Mua kèm chéo danh mục</span>
+                  </div>
                   <ProductCard
                     item={it}
                     position={idx + 1}

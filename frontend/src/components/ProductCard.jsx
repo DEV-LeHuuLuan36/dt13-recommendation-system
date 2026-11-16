@@ -186,6 +186,8 @@ export default function ProductCard({
             alt={item.name || 'Sản phẩm'}
             loading="lazy"
             decoding="async"
+            referrerPolicy="no-referrer"
+            crossOrigin="anonymous"
             width="300"
             height="300"
             onError={() => setImgErrored(true)}

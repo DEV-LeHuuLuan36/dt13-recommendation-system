@@ -24,7 +24,7 @@ function MainProductImage({ src, alt, category, productId }) {
   if (errored || !resolvedUrl) {
     return (
       <img
-        className="product-detail__image"
+        className="product-detail__image" referrerPolicy="no-referrer" crossOrigin="anonymous"
         src={fallback}
         alt={alt || 'Chi tiết sản phẩm'}
         width="600"

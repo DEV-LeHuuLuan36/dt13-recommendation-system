@@ -10,8 +10,9 @@ export function loadConfig(env = process.env, { cwd = process.cwd() } = {}) {
   const merged = { ...env };
 
   for (const fileName of envFiles) {
-    const filePath = resolve(cwd, fileName);
-    if (existsSync(filePath)) {
+    const candPaths = (cwd && cwd !== process.cwd() && cwd !== backendRoot) ? [resolve(cwd, fileName)] : [resolve(cwd, fileName), resolve(backendRoot, fileName)];
+    const filePath = candPaths.find((p) => existsSync(p));
+    if (filePath) {
       const parsed = parseEnvFile(filePath);
       for (const [k, v] of Object.entries(parsed)) {
         if (merged[k] === undefined || merged[k] === '') {

@@ -1,97 +1,98 @@
-// Shared fetch wrapper with consistent error shape.
-async function request(path, options = {}) {
-  // Pull signal out of options so it never leaks into the body.
-  const { signal, ...rest } = options;
-  const opts = {
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    ...rest,
-  };
-  if (signal) opts.signal = signal;
-  if (opts.body && typeof opts.body !== 'string') {
-    opts.body = JSON.stringify(opts.body);
-  }
-  let res;
-  try {
-    res = await fetch(path, opts);
-  } catch (err) {
-    if (err && err.name === 'AbortError') throw err;
-    throw err;
-  }
-  let body = null;
-  if (res.status !== 204) {
-    try { body = await res.json(); } catch { /* ignore */ }
-  }
-  if (!res.ok) {
-    const err = new Error((body && body.error && body.error.message) || `HTTP ${res.status}`);
-    err.status = res.status;
-    err.code = body && body.error && body.error.code;
-    err.body = body;
-    throw err;
-  }
-  return body;
-}
+// Frontend API client with isomorphic fetch wrapper and session handling.
+const API_BASE = '';
 
-function buildQuery(params) {
-  if (!params) return '';
-  const qs = new URLSearchParams();
+function buildQuery(params = {}) {
+  const sp = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
-    if (v === undefined || v === null || v === '') continue;
-    qs.set(k, String(v));
+    if (v !== undefined && v !== null && v !== '') {
+      sp.set(k, String(v));
+    }
   }
-  const s = qs.toString();
+  const s = sp.toString();
   return s ? `?${s}` : '';
 }
 
+async function request(path, options = {}) {
+  const url = `${API_BASE}${path}`;
+  const headers = { ...(options.headers || {}) };
+  if (options.body && typeof options.body === 'object' && !(options.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json';
+    options.body = JSON.stringify(options.body);
+  }
+  const res = await fetch(url, {
+    credentials: 'include',
+    ...options,
+    headers,
+  });
+  if (res.status === 204) return null;
+  const contentType = res.headers.get('content-type') || '';
+  const data = contentType.includes('application/json') ? await res.json() : await res.text();
+  if (!res.ok) {
+    const err = new Error((data && data.error && data.error.message) || data.message || `Loi HTTP ${res.status}`);
+    err.status = res.status;
+    err.code = (data && data.error && data.error.code) || data.code;
+    err.details = (data && data.error && data.error.details) || data.details;
+    throw err;
+  }
+  return data;
+}
+
 export const api = {
+  // Auth
+  me() { return request('/api/auth/me'); },
+  login(body) { return request('/api/auth/login', { method: 'POST', body }); },
+  logout() { return request('/api/auth/logout', { method: 'POST' }); },
+
   // Products
   listProducts(params = {}, options = {}) {
-    const { _signal, includeInactive, ...rest } = params;
-    const queryParams = {
-      ...rest,
-      includeInactive: includeInactive ? 'true' : undefined,
-    };
-    const suffix = buildQuery(queryParams);
-    return request(`/api/products${suffix}`, { ...options, signal: _signal });
+    const suffix = buildQuery(params);
+    return request(`/api/products${suffix}`, options);
   },
-  getProduct(productId, { includeInactive = false } = {}) {
-    const qs = includeInactive ? '?includeInactive=true' : '';
-    return request(`/api/products/${encodeURIComponent(productId)}${qs}`);
+  getProduct(productId) {
+    return request(`/api/products/${encodeURIComponent(productId)}`);
   },
-  createProduct(body) { return request('/api/products', { method: 'POST', body }); },
-  updateProduct(productId, body) { return request(`/api/products/${encodeURIComponent(productId)}`, { method: 'PATCH', body }); },
-  deleteProduct(productId) { return request(`/api/products/${encodeURIComponent(productId)}`, { method: 'DELETE' }); },
+  buyProduct(productId) {
+    return request(`/api/products/${encodeURIComponent(productId)}/buy`, { method: 'POST' });
+  },
 
   // Categories
   listCategories() { return request('/api/categories'); },
-  createCategory(body) { return request('/api/categories', { method: 'POST', body }); },
-  updateCategory(categoryId, body) { return request(`/api/categories/${encodeURIComponent(categoryId)}`, { method: 'PATCH', body }); },
-  deleteCategory(categoryId) { return request(`/api/categories/${encodeURIComponent(categoryId)}`, { method: 'DELETE' }); },
 
-  // Customer admin CRUD
-  listCustomers(params = {}) {
-    const qs = new URLSearchParams();
-    if (params.q) qs.set('q', params.q);
-    if (params.page) qs.set('page', String(params.page));
-    if (params.pageSize) qs.set('pageSize', String(params.pageSize));
-    const suffix = qs.toString() ? `?${qs.toString()}` : '';
-    return request(`/api/customers${suffix}`);
+  // Admin CRUD Products
+  adminCreateProduct(body) { return request('/api/admin/products', { method: 'POST', body }); },
+  adminUpdateProduct(productId, body) {
+    return request(`/api/admin/products/${encodeURIComponent(productId)}`, { method: 'PUT', body });
   },
-  getCustomer(customerId) { return request(`/api/customers/${encodeURIComponent(customerId)}`); },
-  createCustomer(body) { return request('/api/customers', { method: 'POST', body }); },
-  updateCustomer(customerId, body) { return request(`/api/customers/${encodeURIComponent(customerId)}`, { method: 'PATCH', body }); },
-  deleteCustomer(customerId) { return request(`/api/customers/${encodeURIComponent(customerId)}`, { method: 'DELETE' }); },
+  adminDeleteProduct(productId) {
+    return request(`/api/admin/products/${encodeURIComponent(productId)}`, { method: 'DELETE' });
+  },
 
-  // Interactions
-  recordView(body) { return request('/api/interactions/views', { method: 'POST', body }); },
-  recordPurchase(body) { return request('/api/interactions/purchases', { method: 'POST', body }); },
+  // Admin CRUD Categories
+  adminCreateCategory(body) { return request('/api/admin/categories', { method: 'POST', body }); },
+  adminUpdateCategory(categoryId, body) {
+    return request(`/api/admin/categories/${encodeURIComponent(categoryId)}`, { method: 'PUT', body });
+  },
+  adminDeleteCategory(categoryId) {
+    return request(`/api/admin/categories/${encodeURIComponent(categoryId)}`, { method: 'DELETE' });
+  },
+
+  // Admin CRUD Customers
+  adminListCustomers(params = {}) {
+    const suffix = buildQuery(params);
+    return request(`/api/admin/customers${suffix}`);
+  },
+  adminCreateCustomer(body) { return request('/api/admin/customers', { method: 'POST', body }); },
+  adminUpdateCustomer(customerId, body) {
+    return request(`/api/admin/customers/${encodeURIComponent(customerId)}`, { method: 'PUT', body });
+  },
+  adminDeleteCustomer(customerId) {
+    return request(`/api/admin/customers/${encodeURIComponent(customerId)}`, { method: 'DELETE' });
+  },
 
   // History
-  listHistory(params = {}) {
+  getMyHistory(params = {}) {
     const qs = new URLSearchParams();
-    if (params.type) qs.set('type', params.type);
-    if (params.page) qs.set('page', String(params.page));
-    if (params.pageSize) qs.set('pageSize', String(params.pageSize));
+    if (params.limit) qs.set('limit', String(params.limit));
     const suffix = qs.toString() ? `?${qs.toString()}` : '';
     return request(`/api/me/history${suffix}`);
   },
@@ -103,6 +104,7 @@ export const api = {
     if (params.formula) qs.set('formula', String(params.formula));
     if (params.includeViews) qs.set('includeViews', String(params.includeViews));
     if (params.excludeProductId) qs.set('excludeProductId', String(params.excludeProductId));
+    if (params.demoCustomerId) qs.set('demoCustomerId', String(params.demoCustomerId));
     const suffix = qs.toString() ? `?${qs.toString()}` : '';
     return request(`/api/recommendations/me${suffix}`, options);
   },
@@ -113,6 +115,22 @@ export const api = {
     if (params.includeViews) qs.set('includeViews', String(params.includeViews));
     const suffix = qs.toString() ? `?${qs.toString()}` : '';
     return request(`/api/recommendations/products/${encodeURIComponent(productId)}${suffix}`);
+  },
+
+  // Trending & Cross-Category
+  getTrending(params = {}, options = {}) {
+    const qs = new URLSearchParams();
+    if (params.limit) qs.set('limit', String(params.limit));
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return request(`/api/recommendations/trending${suffix}`, options);
+  },
+  getCrossCategory(params = {}, options = {}) {
+    const qs = new URLSearchParams();
+    if (params.limit) qs.set('limit', String(params.limit));
+    if (params.customerId) qs.set('customerId', String(params.customerId));
+    if (params.demoCustomerId) qs.set('demoCustomerId', String(params.demoCustomerId));
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    return request(`/api/recommendations/cross-category${suffix}`, options);
   },
 
   // Hybrid feed & Detail recommendations
@@ -136,7 +154,6 @@ export const api = {
   // Search history
   listSearches() { return request('/api/me/searches'); },
   clearSearches() { return request('/api/me/searches', { method: 'DELETE' }); },
-  deleteSearch(eventId) { return request(`/api/me/searches/${encodeURIComponent(eventId)}`, { method: 'DELETE' }); },
 
   // Recommendation graph & Offline evaluation (admin only).
   recommendationGraph(params = {}) {
