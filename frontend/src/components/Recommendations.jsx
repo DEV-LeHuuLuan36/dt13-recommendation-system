@@ -10,8 +10,8 @@ const VISIBLE_COUNT = 4;
 const ALGORITHM_DEFINITIONS = [
   {
     id: 'hybrid',
-    label: '🌟 Mô hình lai Hybrid (7 tầng)',
-    shortLabel: '🌟 Hybrid 7 tầng',
+    label: 'Mô hình lai Hybrid (7 tầng)',
+    shortLabel: 'Hybrid 7 tầng',
     badge: 'Hybrid Engine (7 tầng)',
     tagline: 'Tổng hợp 7 tầng: Ý định NLP (<5ms) + Lọc cộng tác + Đa hành vi + Phân rã thời gian + Serendipity',
     formula: 'Score = ∑ (wi · Score_i) × 2^(-Δt / λ) - Penalty',
@@ -27,8 +27,8 @@ const ALGORITHM_DEFINITIONS = [
   },
   {
     id: 'user_cf',
-    label: '👥 Lọc cộng tác (User-CF)',
-    shortLabel: '👥 User-based CF',
+    label: 'Lọc cộng tác (User-CF)',
+    shortLabel: 'User-based CF',
     badge: 'Lọc cộng tác User-CF',
     tagline: 'Lọc cộng tác dựa trên khách hàng có cùng lịch sử mua sắm',
     formula: 'Support(u, p) = |{ v ∈ N(u) | v đã mua p }|',
@@ -46,8 +46,8 @@ LIMIT $limit`,
   },
   {
     id: 'weighted',
-    label: '⚡ Đa hành vi (Mua x3.0 + Xem x1.0)',
-    shortLabel: '⚡ Đa hành vi (Trọng số)',
+    label: 'Đa hành vi (Mua x3.0 + Xem x1.0)',
+    shortLabel: 'Đa hành vi (Trọng số)',
     badge: 'Đa hành vi (Mua x3 + Xem x1)',
     tagline: 'Lọc cộng tác mở rộng kết hợp trọng số Mua và Xem',
     formula: 'Score = 3.0 × BoughtCount + 1.0 × ViewedCount',
@@ -69,10 +69,10 @@ LIMIT $limit`,
   },
   {
     id: 'cross_category',
-    label: '🧭 Khám phá chéo (Serendipity)',
-    shortLabel: '🧭 Chéo Serendipity',
+    label: 'Khám phá chéo (Serendipity)',
+    shortLabel: 'Chéo Serendipity',
     badge: 'Khám phá chéo (Serendipity)',
-    tagline: 'Gợi ý đột phá chéo danh mục: "Bán cần câu ➔ Bán thuyền"',
+    tagline: 'Gợi ý đột phá chéo danh mục: "Bán cần câu -> Bán thuyền"',
     formula: 'Category(rec) ≠ Category(anchor)  ∧  CoBuyerCount ≥ 1',
     cypher: `MATCH (me:Customer { customerId: $customerId })-[:BOUGHT]->(p1:Product)-[:BELONGS_TO]->(c1:Category)
 MATCH (peer:Customer)-[:BOUGHT]->(p1) WHERE peer <> me
@@ -87,8 +87,8 @@ LIMIT $limit`,
   },
   {
     id: 'trending',
-    label: '🔥 Thịnh hành (Cold-Start)',
-    shortLabel: '🔥 Thịnh hành Trending',
+    label: 'Thịnh hành (Cold-Start)',
+    shortLabel: 'Thịnh hành Trending',
     badge: 'Thịnh hành (Cold-Start)',
     tagline: 'Sản phẩm phổ biến và đánh giá cao (Giải pháp Cold-Start)',
     formula: 'Score = Count(Distinct Buyers) × Rating',
@@ -254,24 +254,24 @@ export default function Recommendations({
     if (selectedAlgo === 'weighted') {
       const b = it.boughtCount ?? 0;
       const v = it.viewedCount ?? 0;
-      return `⚡ ${b} mua + ${v} xem (${it.score || 0}đ)`;
+      return `${b} mua + ${v} xem (${it.score || 0}đ)`;
     }
     if (selectedAlgo === 'user_cf') {
       const sup = it.support ?? 1;
-      return `👥 ${sup} người cùng mua (${it.score || sup}đ)`;
+      return `${sup} người cùng mua (${it.score || sup}đ)`;
     }
     if (selectedAlgo === 'cross_category') {
-      return `🧭 Mua kèm chéo (${it.categoryName || 'Phụ kiện'})`;
+      return `Mua kèm chéo (${it.categoryName || 'Phụ kiện'})`;
     }
     if (selectedAlgo === 'trending') {
-      return `🔥 ${it.support || 9} khách đã mua`;
+      return `${it.support || 9} khách đã mua`;
     }
     // Hybrid
-    if (it.isSerendipity) return '🧭 Serendipity';
-    if (it.source === 'user_cf') return '👥 User-CF';
-    if (it.source === 'multibehavior') return '⚡ Đa hành vi';
-    if (it.source === 'search') return '🔍 Ý định tìm kiếm';
-    return `🌟 Hybrid (${Math.round((it.score || 0.8) * 100) / 100})`;
+    if (it.isSerendipity) return 'Serendipity';
+    if (it.source === 'user_cf') return 'User-CF';
+    if (it.source === 'multibehavior') return 'Đa hành vi';
+    if (it.source === 'search') return 'Ý định tìm kiếm';
+    return `Hybrid (${Math.round((it.score || 0.8) * 100) / 100})`;
   };
 
   return (
@@ -366,7 +366,7 @@ export default function Recommendations({
 
           <div className="reco-explainer-card__meta">
             <span className="reco-meta-tag">
-              👤 Đối tượng phân tích:{' '}
+              Đối tượng phân tích:{' '}
               {customerId ? (
                 <strong>Tài khoản hiện tại ({customerId})</strong>
               ) : (
@@ -374,7 +374,7 @@ export default function Recommendations({
               )}
             </span>
             <span className="reco-meta-tag">
-              📊 Tổng ứng viên lọc: <strong>{items.length} sản phẩm</strong>
+              Tổng ứng viên lọc: <strong>{items.length} sản phẩm</strong>
             </span>
           </div>
 
@@ -426,7 +426,7 @@ export default function Recommendations({
         <div className="reco-sub-section" style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid #dce5df' }}>
           <div className="reco-block__header" style={{ marginBottom: '12px', border: 'none', padding: 0 }}>
             <h3 className="reco-block__title" style={{ fontSize: '1.125rem' }}>
-              🧭 Khám phá chéo danh mục (Serendipity)
+              Khám phá chéo danh mục (Serendipity)
             </h3>
           </div>
           <div className="reco-track-wrapper">
@@ -434,7 +434,7 @@ export default function Recommendations({
               {crossCategoryItems.slice(0, VISIBLE_COUNT).map((it, idx) => (
                 <div key={it.productId} className="reco-card-item">
                   <div className="reco-item-algo-banner">
-                    <span className="reco-item-algo-text">🧭 Mua kèm chéo danh mục</span>
+                    <span className="reco-item-algo-text">Mua kèm chéo danh mục</span>
                   </div>
                   <ProductCard
                     item={it}
