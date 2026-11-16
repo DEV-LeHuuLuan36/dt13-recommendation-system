@@ -733,46 +733,49 @@ def build_presentation():
         "- Đồng thời, trên từng thẻ sản phẩm đều có huy hiệu gắn nhãn điểm số minh bạch, cùng nút Ẩn và Hoàn tác theo thời gian thực."
     )
 
-    # ==========================================
+        # ==========================================
     # SLIDE 13: GIAO DIỆN QUẢN TRỊ & MẠNG LƯỚI ĐỒ THỊ
     # ==========================================
     s13 = prs.slides.add_slide(blank_layout)
     set_slide_background(s13)
-    add_header(s13, "Giao Diện Quản Trị", "Admin Console & Mạng Lưới Đồ Thị Giải Thích Gợi Ý", "Trực quan hóa đường đi liên kết D3/SVG và kiểm soát chất lượng dữ liệu tập trung")
+    add_header(s13, "Giao Diện Quản Trị", "Admin Console: Đồ Thị Trực Quan Hóa Đường Đi Gợi Ý", "Minh bạch hóa logic suy luận 2 bước nhảy (2-hop) qua thư viện D3/SVG")
 
-    add_card(s13, 0.8, 1.8, 5.7, 5.1, "Bảng Điều Khiển Quản Trị (Admin Console)", [
-        "📊 Hàng Thẻ KPI Thời Gian Thực:",
-        "  • Hiển thị số lượng trực tiếp: 150 Sản phẩm, 6 Danh mục, 65 Khách hàng.",
-        "  • Đèn báo trạng thái kết nối Neo4j (Xanh: 'Đã kết nối').",
-        "",
-        "🛠️ Phân Hệ Quản Trị CRUD Toàn Diện:",
-        "  • Quản trị Sản phẩm: Thêm mới, chỉnh sửa giá, đổi ảnh trực quan từ kho 120 ảnh mẫu, ẩn/hiện sản phẩm kinh doanh.",
-        "  • Quản trị Danh mục: Thêm, sửa mô tả; chặn xóa danh mục khi còn sản phẩm.",
-        "  • Quản trị Khách hàng: Tìm kiếm theo tên/email, cấp quyền Customer/Admin, vô hiệu hóa tài khoản vi phạm.",
-        "",
-        "🔒 Bảo Vệ Cascade:",
-        "  Mọi thao tác xóa đều kiểm tra lịch sử BOUGHT/VIEWED để không làm gãy cấu trúc đồ thị."
+    # Left: Real Screenshot of Graph
+    card_img13 = s13.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(0.8), Inches(1.8), Inches(7.3), Inches(3.35))
+    card_img13.fill.solid()
+    card_img13.fill.fore_color.rgb = CARD_BG
+    card_img13.line.color.rgb = BORDER_COLOR
+    if os.path.exists("C:/Users/Thinkpad/.gemini/antigravity/brain/4f0a3e0c-e4d9-4645-8ebe-d37663365f70/.user_uploaded/media_1794812918646_81b96a6e.png"):
+        s13.shapes.add_picture("C:/Users/Thinkpad/.gemini/antigravity/brain/4f0a3e0c-e4d9-4645-8ebe-d37663365f70/.user_uploaded/media_1794812918646_81b96a6e.png", Inches(0.85), Inches(1.85), width=Inches(7.2))
+
+    # Legend / Key below image
+    add_card(s13, 0.8, 5.3, 7.3, 1.6, "Ý Nghĩa Các Nút & Vòng Tròn Trên Đồ Thị", [
+        "• 🔵 Nút trung tâm: Khách hàng đang xét (Target Customer - Màu xanh dương)",
+        "• 🔷 Vòng trong: Khách tương đồng (Peer Customers - Cùng sở thích)",
+        "• 🟣 Cầu nối: Sản phẩm mua chung (Shared: RC_P070, RC_P009, RC_P020)",
+        "• 🟢 Vòng ngoài cùng: Sản phẩm gợi ý (Recommended: Dell Vostro, HP Victus...)"
     ], header_color=PRIMARY_DARK)
 
-    add_card(s13, 6.8, 1.8, 5.7, 5.1, "Mạng Lưới Đồ Thị Giải Thích (Explainable Graph)", [
-        "🌐 Trực Quan Hóa Mối Quan Hệ Bằng D3/SVG:",
-        "  • Nút trung tâm: Khách hàng mục tiêu (Target Customer - Màu xanh dương).",
-        "  • Vòng liên kết 1: Các khách hàng có hành vi tương đồng (Peer Customers).",
-        "  • Vòng liên kết 2: Sản phẩm mua chung đóng vai trò cầu nối (Shared Products).",
-        "  • Nút đích: Sản phẩm đề xuất cuối cùng (Recommended Products - Màu xanh lá).",
+    # Right: Explainable AI Card
+    add_card(s13, 8.4, 1.8, 4.1, 5.1, "Explainable AI (Gợi Ý Giải Thích Được)", [
+        "🎯 Giá Trị 'Gợi Ý Minh Bạch':",
+        "  Khác với các mô hình Deep Learning 'hộp đen' (Black-box) không rõ lý do, Neo4j thể hiện tường minh 100% đường đi logic.",
         "",
-        "🎯 Giá Trị 'Gợi Ý Có Thể Giải Thích' (Explainable AI):",
-        "  Người quản trị có thể trả lời chính xác câu hỏi:",
-        "  'Tại sao sản phẩm P005 lại được đề xuất cho khách hàng C001? -> Vì khách C001 có cùng gu mua Laptop P001 với khách C002, và khách C002 đã mua P005!'"
+        "🔍 Cơ Chế Duyệt 2 Bước Nhảy:",
+        "  Target (C001) -> BOUGHT -> Shared (P070) <- BOUGHT <- Peer (C015) -> BOUGHT -> Recommended (Dell, HP).",
+        "",
+        "🛡️ Tin Cậy Cho Doanh Nghiệp:",
+        "  Admin và khách hàng biết rõ nguyên nhân vì sao sản phẩm được đề xuất, tăng tỷ lệ nhấp chuột (CTR)."
     ], header_color=PRIMARY_GREEN)
 
     add_speaker_note(s13,
         "KỊCH BẢN THUYẾT TRÌNH (45 giây):\n"
-        "- Tiếp theo là giao diện Quản trị Admin Console.\n"
-        "- Trang Admin có đầy đủ các chức năng quản lý Sản phẩm, Danh mục, Khách hàng với cơ chế chống xóa cascade an toàn.\n"
-        "- Nhưng tính năng ấn tượng nhất chính là tab 'Phân tích gợi ý' (Recommendation Graph):\n"
-        "- Tại đây nhóm sử dụng thư viện đồ họa D3/SVG để dựng đồ thị mạng nhện trực quan hóa: Ở giữa là khách hàng mục tiêu, xung quanh là các khách hàng tương đồng và đường đi nối tới các sản phẩm được đề xuất.\n"
-        "- Đây chính là tính năng Explainable Recommendation - Gợi ý có thể giải thích: giúp người quản trị hiểu rõ lý do vì sao thuật toán lại đưa ra gợi ý đó."
+        "- Thưa Thầy Cô, trên màn hình là ảnh chụp thực tế tính năng 'Phân tích gợi ý' trên trang Admin của nhóm.\n"
+        "- Nhóm sử dụng thư viện D3/SVG để trực quan hóa toàn bộ đường đi gợi ý:\n"
+        "  + Ở giữa là khách hàng mục tiêu màu xanh dương.\n"
+        "  + Các vòng tròn tím ở giữa là các sản phẩm mua chung đóng vai trò cầu nối, ví dụ như mã P070, P009, P020.\n"
+        "  + Và vòng ngoài cùng màu xanh lá là các sản phẩm được thuật toán đề xuất như Laptop Dell Vostro hay HP Victus.\n"
+        "- Đây chính là tính năng Explainable AI: Gợi ý có thể giải thích minh bạch. Người quản trị hoàn toàn kiểm soát được vì sao hệ thống đưa ra quyết định gợi ý đó."
     )
 
     # ==========================================
@@ -780,34 +783,49 @@ def build_presentation():
     # ==========================================
     s14 = prs.slides.add_slide(blank_layout)
     set_slide_background(s14)
-    add_header(s14, "Đánh Giá Mô Hình", "Phương Pháp Đánh Giá Ngoại Tuyến (Offline Evaluation)", "Kiểm thử khoa học theo phương pháp Leave-One-Out trên tập dữ liệu thực tế")
+    add_header(s14, "Đánh Giá Mô Hình", "Kết Quả Thực Nghiệm Ngoại Tuyến (Offline Evaluation)", "Kiểm thử Leave-One-Out trên 30 khách hàng và 150 sản phẩm thực tế")
 
-    add_stat_card(s14, 0.8, 1.8, 2.7, 1.8, "Precision@K", "Độ chính xác", "Tỷ lệ gợi ý trúng sở thích", PRIMARY_BLUE)
-    add_stat_card(s14, 3.8, 1.8, 2.7, 1.8, "Recall@K", "Độ bao phủ", "Khả năng tìm lại món đã thích", PRIMARY_GREEN)
-    add_stat_card(s14, 6.8, 1.8, 2.7, 1.8, "MAP", "Mean Avg Precision", "Độ chuẩn xác theo thứ hạng", PRIMARY_AMBER)
-    add_stat_card(s14, 9.8, 1.8, 2.7, 1.8, "Coverage", "Độ phủ kho hàng", "Tỷ lệ SP trong kho được gợi ý", PRIMARY_DARK)
+    # Left: Real Screenshot of Benchmark Table
+    card_img14 = s14.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(0.8), Inches(1.8), Inches(7.3), Inches(3.35))
+    card_img14.fill.solid()
+    card_img14.fill.fore_color.rgb = CARD_BG
+    card_img14.line.color.rgb = BORDER_COLOR
+    if os.path.exists("C:/Users/Thinkpad/.gemini/antigravity/brain/4f0a3e0c-e4d9-4645-8ebe-d37663365f70/.user_uploaded/media_1794812964244_ea44764d.jpg"):
+        s14.shapes.add_picture("C:/Users/Thinkpad/.gemini/antigravity/brain/4f0a3e0c-e4d9-4645-8ebe-d37663365f70/.user_uploaded/media_1794812964244_ea44764d.jpg", Inches(0.85), Inches(1.85), width=Inches(7.2))
 
-    add_card(s14, 0.8, 3.9, 11.7, 3.0, "Quy Trình Thực Hiện Đánh Giá Ngoại Tuyến Trong Hệ Thống", [
-        "1. Phương pháp phân chia dữ liệu (Data Splitting):",
-        "    • Áp dụng chiến lược Leave-One-Out / Hold-out: 80% lịch sử tương tác dùng để xây dựng đồ thị huấn luyện (Train Set), 20% giao dịch mới nhất được giấu đi làm tập kiểm thử (Test Set).",
+    # 4 Quick Stat Pills below image
+    add_stat_card(s14, 0.8, 5.3, 1.75, 1.6, "63.3%", "Recall@10", "Cao nhất (+111%)", PRIMARY_GREEN)
+    add_stat_card(s14, 2.65, 5.3, 1.75, 1.6, "0.506", "NDCG@10", "Xếp món đúng Top 1-3", PRIMARY_BLUE)
+    add_stat_card(s14, 4.5, 5.3, 1.75, 1.6, "58%", "Coverage", "Bao phủ 87/150 SP", PRIMARY_AMBER)
+    add_stat_card(s14, 6.35, 5.3, 1.75, 1.6, "41.1 ms", "Độ trễ Median", "Chuẩn Real-time", PRIMARY_DARK)
+
+    # Right: Analysis Card
+    add_card(s14, 8.4, 1.8, 4.1, 5.1, "Phân Tích Kết Quả Thực Nghiệm", [
+        "📊 So Sánh 3 Phương Pháp:",
+        "1. Phổ Biến (Popularity):",
+        "  Recall chỉ 30%, Coverage chỉ 8.3% (bị điểm mù hàng hot, bỏ quên 110 sản phẩm trong kho).",
         "",
-        "2. Cơ chế kiểm tra tự động:",
-        "    • Với mỗi khách hàng trong tập kiểm thử, hệ thống kích hoạt động cơ gợi ý Top-K (K = 5, 10).",
-        "    • So sánh danh sách Top-K đề xuất với các sản phẩm thực tế khách đã mua trong tập Test Set.",
+        "2. Lọc Cộng Tác Đồ Thị (Graph CF):",
+        "  Recall 60% (+112%), NDCG 0.482, Coverage 56% (khai thác 83 sản phẩm).",
         "",
-        "3. Module đo lường trực tiếp trên giao diện Admin:",
-        "    • Admin chỉ cần vào tab 'Đánh giá' và bấm nút '🔄 Chạy lại đánh giá', hệ thống sẽ quét tự động qua 60 khách hàng và trả về bảng báo cáo chỉ số định lượng chi tiết trong vài giây."
+        "3. Hệ Gợi Ý Lai (Hybrid Feed):",
+        "  • Recall đạt đỉnh 63.3% (đoán trúng 6.3/10 khách).",
+        "  • NDCG đạt 0.506 (đẩy sản phẩm đúng lên ngay Top 1 - 3).",
+        "  • Coverage 58% (giúp hàng đuôi dài Long-tail tiếp cận người mua).",
+        "  • Tốc độ phản hồi cực nhanh: 41.1 ms."
     ], header_color=PRIMARY_DARK)
 
     add_speaker_note(s14,
-        "KỊCH BẢN THUYẾT TRÌNH (40 giây):\n"
-        "- Thưa Thầy, để đánh giá độ chính xác của hệ gợi ý một cách khoa học, nhóm đã xây dựng module Đánh giá ngoại tuyến (Offline Evaluation).\n"
-        "- Nhóm sử dụng phương pháp Leave-one-out: giấu đi 20% giao dịch mua hàng gần nhất làm tập kiểm thử, chỉ để lại 80% làm tập đồ thị huấn luyện.\n"
-        "- Sau đó, hệ thống chạy thuật toán gợi ý và so khớp xem sản phẩm được gợi ý có trùng với sản phẩm bị giấu đi hay không thông qua 4 chỉ số chuẩn quốc tế: Precision@K, Recall@K, MAP và Catalog Coverage.\n"
-        "- Chức năng này được tích hợp sẵn thành 1 tab trong trang Admin, chỉ cần 1 cú click chuột là hệ thống tự động tính toán và xuất báo cáo kết quả."
+        "KỊCH BẢN THUYẾT TRÌNH (45 giây):\n"
+        "- Thưa Thầy Cô, đây là bảng số liệu đo lường thực nghiệm thực tế chạy trực tiếp trên hệ thống của nhóm qua phương pháp Leave-One-Out trên 30 khách hàng:\n"
+        "- Nhóm đã so sánh đối đầu giữa 3 phương pháp:\n"
+        "  1. Thuật toán Phổ biến (Popularity) có độ phủ rất tệ chỉ 8.3%, tức là 110 sản phẩm khác trong kho hoàn toàn bị lãng quên.\n"
+        "  2. Khi áp dụng Lọc cộng tác đồ thị (Graph CF), độ chính xác Recall tăng vọt lên 60% (tăng hơn 112%) và độ phủ đạt 56%.\n"
+        "  3. Đặc biệt, Mô hình lai Hybrid Feed đạt kết quả cao nhất: Recall 63.3%, chỉ số xếp hạng NDCG đạt 0.506 đưa sản phẩm mong muốn lên ngay vị trí Top 1 đến Top 3, độ phủ đạt 58% và thời gian phản hồi trung vị chỉ mất 41.1 mili-giây.\n"
+        "- Kết quả thực nghiệm này khẳng định tính ưu việt vượt trội của giải pháp đồ thị lai do nhóm đề xuất."
     )
 
-    # ==========================================
+# ==========================================
     # SLIDE 15: ĐO LƯỜNG HIỆU NĂNG THỰC TẾ
     # ==========================================
     s15 = prs.slides.add_slide(blank_layout)
