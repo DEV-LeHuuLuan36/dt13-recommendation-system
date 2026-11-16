@@ -4,29 +4,29 @@ import { parseSearchIntent } from './searchIntentParser.js';
 import { toNumber } from './mappers.js';
 import { EVENTS } from '../cypher/queries.js';
 
-// Configuration constants
+// Configuration constants (tunable via .env without editing code)
 export const CONFIG = {
   WEIGHTS: {
-    USER_CF: 2.5,
-    MULTI_BEHAVIOR: 2.0,
-    SEARCH_INTENT_FRESH: 5.0, // Searches within current visit or < 2 hours
-    SEARCH_INTENT_OLDER: 1.8,
-    CO_BOUGHT: 1.5,
-    CROSS_CATEGORY: 1.8, // Cross-category collaborative filtering
-    SUBSTITUTE: 1.0,
-    FALLBACK: 0.3,
+    USER_CF: process.env.HYBRID_WEIGHT_USER_CF ? Number(process.env.HYBRID_WEIGHT_USER_CF) : 2.5,
+    MULTI_BEHAVIOR: process.env.HYBRID_WEIGHT_MULTI_BEHAVIOR ? Number(process.env.HYBRID_WEIGHT_MULTI_BEHAVIOR) : 2.0,
+    SEARCH_INTENT_FRESH: process.env.HYBRID_WEIGHT_SEARCH_FRESH ? Number(process.env.HYBRID_WEIGHT_SEARCH_FRESH) : 5.0, // Searches within current visit or < 2 hours
+    SEARCH_INTENT_OLDER: process.env.HYBRID_WEIGHT_SEARCH_OLDER ? Number(process.env.HYBRID_WEIGHT_SEARCH_OLDER) : 1.8,
+    CO_BOUGHT: process.env.HYBRID_WEIGHT_CO_BOUGHT ? Number(process.env.HYBRID_WEIGHT_CO_BOUGHT) : 1.5,
+    CROSS_CATEGORY: process.env.HYBRID_WEIGHT_CROSS_CAT ? Number(process.env.HYBRID_WEIGHT_CROSS_CAT) : 1.8, // Cross-category collaborative filtering
+    SUBSTITUTE: process.env.HYBRID_WEIGHT_SUBSTITUTE ? Number(process.env.HYBRID_WEIGHT_SUBSTITUTE) : 1.0,
+    FALLBACK: process.env.HYBRID_WEIGHT_FALLBACK ? Number(process.env.HYBRID_WEIGHT_FALLBACK) : 0.3,
   },
   HALF_LIFE_DAYS: {
-    SEARCH: 7.0,
-    VIEW: 14.0,
-    PURCHASE_PREFERENCE: 60.0,
-    IMPRESSION_PENALTY: 14.0,
+    SEARCH: process.env.HALF_LIFE_SEARCH ? Number(process.env.HALF_LIFE_SEARCH) : 7.0,
+    VIEW: process.env.HALF_LIFE_VIEW ? Number(process.env.HALF_LIFE_VIEW) : 14.0,
+    PURCHASE_PREFERENCE: process.env.HALF_LIFE_PURCHASE ? Number(process.env.HALF_LIFE_PURCHASE) : 60.0,
+    IMPRESSION_PENALTY: process.env.HALF_LIFE_IMPRESSION ? Number(process.env.HALF_LIFE_IMPRESSION) : 14.0,
   },
   TTL_DAYS: {
     SEARCH_RETENTION: 30,
     IMPRESSION_RETENTION: 14,
   },
-  REPETITION_PENALTY: 0.25,
+  REPETITION_PENALTY: process.env.REPETITION_PENALTY ? Number(process.env.REPETITION_PENALTY) : 0.25,
 };
 
 // Calculate exponential recency decay: 2 ^ (-ageDays / halfLifeDays)

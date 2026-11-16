@@ -192,9 +192,8 @@ export function createRecommendationsRouter({ neo4jClient }) {
         customerId = validateId(req.query.customerId, 'customerId');
         isDemo = true;
       } else {
-        // Fallback for live demo preview to RC_C001 so instructors/guests see the algorithm live
-        customerId = 'RC_C001';
-        isDemo = true;
+        requireCustomerRole(req);
+        customerId = req.auth.customerId;
       }
 
       const limit = parseLimit(req.query.limit);

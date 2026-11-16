@@ -103,10 +103,11 @@ export const api = {
 
   // History
   getMyHistory(params = {}) {
-    const qs = new URLSearchParams();
-    if (params.limit) qs.set('limit', String(params.limit));
-    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    const suffix = buildQuery(params);
     return request(`/api/me/history${suffix}`);
+  },
+  listHistory(params = {}) {
+    return this.getMyHistory(params);
   },
 
   // Recommendations (user_cf / co_bought).
