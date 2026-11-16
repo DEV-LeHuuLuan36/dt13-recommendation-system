@@ -345,8 +345,8 @@ export default function App() {
             onClick={() => goProducts()}
             aria-label="Gợi Ý - Trang chủ"
           >
-            <span className="app-brand__mark" aria-hidden="true">GY</span>
-            <span className="app-brand__text">Gợi Ý</span>
+            <span className="app-brand__mark" aria-hidden="true">PS</span>
+            <span className="app-brand__text">Phone Store</span>
           </button>
 
           <nav className="app-header__nav" aria-label="Điều hướng chính">
