@@ -48,11 +48,25 @@ export const api = {
     const suffix = buildQuery(params);
     return request(`/api/products${suffix}`, options);
   },
-  getProduct(productId) {
-    return request(`/api/products/${encodeURIComponent(productId)}`);
+  getProduct(productId, params = {}) {
+    const suffix = buildQuery(params);
+    return request(`/api/products/${encodeURIComponent(productId)}${suffix}`);
   },
   buyProduct(productId) {
     return request(`/api/products/${encodeURIComponent(productId)}/buy`, { method: 'POST' });
+  },
+
+  // Interactions (Customer views & purchases)
+  recordView(body) {
+    return request('/api/interactions/views', { method: 'POST', body }).catch((err) => {
+      if (err.status === 401 || err.status === 403) {
+        return request('/api/events/view', { method: 'POST', body });
+      }
+      throw err;
+    });
+  },
+  recordPurchase(body) {
+    return request('/api/interactions/purchases', { method: 'POST', body });
   },
 
   // Categories
@@ -152,8 +166,15 @@ export const api = {
     return request(`/api/recommendations/feed${suffix}`, options);
   },
   getDetailRecommendations(productId, params = {}, options = {}) {
-    const suffix = buildQuery(params);
-    return request(`/api/recommendations/detail/${encodeURIComponent(productId)}${suffix}`, options);
+    let pId = productId;
+    let qParams = params;
+    if (productId && typeof productId === 'object') {
+      pId = productId.productId;
+      const { productId: _unused, ...rest } = productId;
+      qParams = rest;
+    }
+    const suffix = buildQuery(qParams);
+    return request(`/api/recommendations/detail/${encodeURIComponent(pId)}${suffix}`, options);
   },
 
   // Event logging

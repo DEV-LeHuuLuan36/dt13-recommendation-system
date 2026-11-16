@@ -177,7 +177,6 @@ export default function ProductCard({
           href={productUrl}
           onClick={handleCardClick}
           tabIndex={-1}
-          aria-hidden="true"
           className="product-card__image-link"
         >
           <img

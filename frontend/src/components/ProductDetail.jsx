@@ -39,7 +39,6 @@ function MainProductImage({ src, alt, category, productId }) {
       src={resolvedUrl}
       alt={alt || 'Chi tiết sản phẩm'}
       loading="eager"
-      fetchPriority="high"
       decoding="async"
       width="600"
       height="450"

@@ -18,7 +18,7 @@ export default function DetailRecommendations({
   const fetchData = useCallback(async () => {
     if (!productId) return;
     try {
-      const res = await api.getDetailRecommendations({ productId, limit: 6 });
+      const res = await api.getDetailRecommendations(productId, { limit: 6 });
       setData(res);
     } catch {
       setData(null);
