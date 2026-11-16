@@ -51,22 +51,6 @@ export default function AdminOfflineEvaluation() {
       >
         <div style={{ maxWidth: '720px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '36px',
-                height: '36px',
-                borderRadius: '10px',
-                background: '#eff6ff',
-                color: '#2563eb',
-                fontSize: '1.25rem',
-              }}
-              aria-hidden="true"
-            >
-              📊
-            </span>
             <h2
               id="eval-heading"
               style={{
@@ -85,13 +69,13 @@ export default function AdminOfflineEvaluation() {
           </p>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '10px' }}>
             <span style={{ fontSize: '0.75rem', padding: '3px 10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '20px', color: '#475569', fontWeight: 600 }}>
-              🎯 Tiêu chuẩn đo: Khả năng đoán đúng (Recall) &amp; Thứ tự ưu tiên lên đầu (NDCG)
+              Tiêu chuẩn đo: Khả năng đoán đúng (Recall) &amp; Thứ tự ưu tiên lên đầu (NDCG)
             </span>
             <span style={{ fontSize: '0.75rem', padding: '3px 10px', background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '20px', color: '#065f46', fontWeight: 600 }}>
-              ⚡ Neo4j Cypher Live Query
+              Neo4j Cypher Live Query
             </span>
             <span style={{ fontSize: '0.75rem', padding: '3px 10px', background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: '20px', color: '#5b21b6', fontWeight: 600 }}>
-              ✨ Hybrid Feed v2.0
+              Hybrid Feed v2.0
             </span>
           </div>
         </div>
@@ -117,9 +101,6 @@ export default function AdminOfflineEvaluation() {
             transition: 'all 0.2s ease',
           }}
         >
-          <span style={{ display: 'inline-block', animation: loading ? 'spin 1s linear infinite' : 'none' }}>
-            🔄
-          </span>
           {loading ? 'Đang phân tích ma trận…' : 'Chạy lại đánh giá'}
         </button>
       </header>
@@ -162,7 +143,7 @@ export default function AdminOfflineEvaluation() {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', fontWeight: 700 }}>
-            <span>⚠️</span> Không thể thực hiện đánh giá:
+            Không thể thực hiện đánh giá:
           </div>
           <p style={{ margin: 0, fontSize: '0.875rem' }}>{error}</p>
         </div>
@@ -174,7 +155,7 @@ export default function AdminOfflineEvaluation() {
           {/* Section 1: KPI Stat Cards */}
           <div>
             <h3 style={{ fontSize: '0.9375rem', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 14px' }}>
-              📌 Chỉ số tổng quan thực nghiệm
+              Chỉ số tổng quan thực nghiệm
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
               {/* Card 1 */}
@@ -190,14 +171,13 @@ export default function AdminOfflineEvaluation() {
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '0.8125rem', color: '#64748b', fontWeight: 600 }}>Tập khách hàng test</span>
-                  <span style={{ fontSize: '1.125rem' }}>👥</span>
                 </div>
                 <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#0f172a', margin: '8px 0 4px' }}>
                   {data.evaluatedUsersCount} người
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <span style={{ fontSize: '0.75rem', background: '#e0f2fe', color: '#0369a1', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>
-                    ✓ Có ≥ 2 giao dịch mua
+                    Có ≥ 2 giao dịch mua
                   </span>
                 </div>
               </div>
@@ -215,14 +195,13 @@ export default function AdminOfflineEvaluation() {
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '0.8125rem', color: '#64748b', fontWeight: 600 }}>Quy mô Catalog đồ thị</span>
-                  <span style={{ fontSize: '1.125rem' }}>📦</span>
                 </div>
                 <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#0f172a', margin: '8px 0 4px' }}>
                   {data.catalogTotalProducts} sản phẩm
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <span style={{ fontSize: '0.75rem', background: '#ecfdf5', color: '#065f46', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>
-                    ✓ 100% active (6 danh mục)
+                    100% active (6 danh mục)
                   </span>
                 </div>
               </div>
@@ -240,7 +219,6 @@ export default function AdminOfflineEvaluation() {
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '0.8125rem', color: '#166534', fontWeight: 600 }}>Độ trễ phản hồi (Median)</span>
-                  <span style={{ fontSize: '1.125rem' }}>⚡</span>
                 </div>
                 <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#15803d', margin: '8px 0 4px' }}>
                   {data.performance?.medianMs} ms
@@ -263,14 +241,13 @@ export default function AdminOfflineEvaluation() {
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '0.8125rem', color: '#6b21a8', fontWeight: 600 }}>Tỷ lệ đổi mới giữa các Visit</span>
-                  <span style={{ fontSize: '1.125rem' }}>🔄</span>
                 </div>
                 <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#7e22ce', margin: '8px 0 4px' }}>
                   {data.comparison?.hybridFeed?.rotationRateBetweenVisitsPercent}%
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <span style={{ fontSize: '0.75rem', background: '#ecfdf5', color: '#065f46', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>
-                    ✓ Đạt chuẩn cấu hình (20–30%)
+                    Đạt chuẩn cấu hình (20–30%)
                   </span>
                 </div>
               </div>
@@ -282,14 +259,14 @@ export default function AdminOfflineEvaluation() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
               <div>
                 <h3 style={{ fontSize: '1.125rem', fontWeight: 800, color: '#0f172a', margin: 0 }}>
-                  📊 Bảng so sánh hiệu quả giữa các phương pháp gợi ý
+                  Bảng so sánh hiệu quả giữa các phương pháp gợi ý
                 </h3>
                 <p style={{ margin: '4px 0 0', fontSize: '0.8125rem', color: '#64748b' }}>
                   Kiểm thử thực tế trên 60 khách hàng và 120 sản phẩm theo phương pháp giấu 1 món (Leave-One-Out)
                 </p>
               </div>
               <span style={{ fontSize: '0.75rem', background: '#eff6ff', color: '#1d4ed8', padding: '4px 10px', borderRadius: '6px', fontWeight: 600 }}>
-                💡 Đánh giá trong Top 10 sản phẩm đề xuất
+                Đánh giá trong Top 10 sản phẩm đề xuất
               </span>
             </div>
 
@@ -301,24 +278,24 @@ export default function AdminOfflineEvaluation() {
                       Phương pháp gợi ý
                     </th>
                     <th scope="col" style={{ padding: '16px 18px', fontWeight: 800, width: '22%' }}>
-                      <div style={{ color: '#0f172a', fontSize: '0.9375rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <span>🎯</span> Tỉ lệ đoán trúng nhu cầu
+                      <div style={{ color: '#0f172a', fontSize: '0.9375rem' }}>
+                        Tỉ lệ đoán trúng nhu cầu
                       </div>
                       <div style={{ fontSize: '0.75rem', fontWeight: 500, color: '#64748b', marginTop: '3px' }}>
                         Khách thấy món cần mua (Recall@10)
                       </div>
                     </th>
                     <th scope="col" style={{ padding: '16px 18px', fontWeight: 800, width: '22%' }}>
-                      <div style={{ color: '#0f172a', fontSize: '0.9375rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <span>🥇</span> Độ ưu tiên lên đầu trang
+                      <div style={{ color: '#0f172a', fontSize: '0.9375rem' }}>
+                        Độ ưu tiên lên đầu trang
                       </div>
                       <div style={{ fontSize: '0.75rem', fontWeight: 500, color: '#64748b', marginTop: '3px' }}>
                         Xếp vị trí Top 1 - 3 (NDCG@10)
                       </div>
                     </th>
                     <th scope="col" style={{ padding: '16px 18px', fontWeight: 800, width: '16%' }}>
-                      <div style={{ color: '#0f172a', fontSize: '0.9375rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <span>📦</span> Độ phủ hàng hóa kho
+                      <div style={{ color: '#0f172a', fontSize: '0.9375rem' }}>
+                        Độ phủ hàng hóa kho
                       </div>
                       <div style={{ fontSize: '0.75rem', fontWeight: 500, color: '#64748b', marginTop: '3px' }}>
                         Không bị tồn ứ hàng (Coverage)
@@ -437,7 +414,7 @@ export default function AdminOfflineEvaluation() {
                         </span>
                       </div>
                       <span style={{ fontSize: '0.75rem', padding: '3px 8px', background: '#7c3aed', borderRadius: '4px', color: '#ffffff', fontWeight: 700 }}>
-                        ⭐ Đề tài mở rộng - Tối ưu nhất
+                        Đề tài mở rộng - Tối ưu nhất
                       </span>
                     </td>
                     <td style={{ padding: '16px 18px' }}>
@@ -493,7 +470,7 @@ export default function AdminOfflineEvaluation() {
             }}
           >
             <h4 style={{ margin: '0 0 12px', fontSize: '0.9375rem', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span>💡</span> Tóm tắt kết quả phân tích học thuật (Academic &amp; SEO Insights)
+              Tóm tắt kết quả phân tích học thuật (Academic &amp; SEO Insights)
             </h4>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px', fontSize: '0.84375rem', color: '#334155', lineHeight: 1.6 }}>
               <div style={{ background: '#ffffff', padding: '14px 16px', borderRadius: '8px', border: '1px solid #f1f5f9' }}>
@@ -514,7 +491,7 @@ export default function AdminOfflineEvaluation() {
           {/* Section 4: Specifications Bento Grid */}
           <div>
             <h4 style={{ margin: '0 0 14px', fontSize: '0.9375rem', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span>📐</span> Đặc tả công thức &amp; tham số thuật toán thực tế
+              Đặc tả công thức &amp; tham số thuật toán thực tế
             </h4>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px' }}>
               {/* Spec 1 */}
