@@ -81,6 +81,9 @@ export const api = {
     const suffix = buildQuery(params);
     return request(`/api/admin/customers${suffix}`);
   },
+  listCustomers(params = {}) {
+    return this.adminListCustomers(params);
+  },
   adminCreateCustomer(body) { return request('/api/admin/customers', { method: 'POST', body }); },
   adminUpdateCustomer(customerId, body) {
     return request(`/api/admin/customers/${encodeURIComponent(customerId)}`, { method: 'PUT', body });
