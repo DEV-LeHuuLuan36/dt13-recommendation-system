@@ -68,13 +68,13 @@ export function createApp({ neo4jClient = null, sessionSecret = 'change-me', env
   // Product/Category/Customer/Interactions/History/Recommendations all require an active session;
   // router-level checks further restrict each verb to the right role.
   // Products and Categories allow public GET for guests; mutations are guarded within routers.
-  app.use('/api/products', createProductsRouter({ neo4jClient }));
-  app.use('/api/categories', createCategoriesRouter({ neo4jClient }));
+  app.use(['/api/products', '/api/admin/products'], createProductsRouter({ neo4jClient }));
+  app.use(['/api/categories', '/api/admin/categories'], createCategoriesRouter({ neo4jClient }));
 
   const guardedCustomers = Router();
   guardedCustomers.use(requireAuth(neo4jClient));
   guardedCustomers.use('/', createCustomersRouter({ neo4jClient }));
-  app.use('/api/customers', guardedCustomers);
+  app.use(['/api/customers', '/api/admin/customers'], guardedCustomers);
 
   const guardedInteractions = Router();
   guardedInteractions.use(requireAuth(neo4jClient));

@@ -60,21 +60,27 @@ export const api = {
 
   // Admin CRUD Products
   adminCreateProduct(body) { return request('/api/admin/products', { method: 'POST', body }); },
+  createProduct(body) { return this.adminCreateProduct(body); },
   adminUpdateProduct(productId, body) {
     return request(`/api/admin/products/${encodeURIComponent(productId)}`, { method: 'PUT', body });
   },
+  updateProduct(productId, body) { return this.adminUpdateProduct(productId, body); },
   adminDeleteProduct(productId) {
     return request(`/api/admin/products/${encodeURIComponent(productId)}`, { method: 'DELETE' });
   },
+  deleteProduct(productId) { return this.adminDeleteProduct(productId); },
 
   // Admin CRUD Categories
   adminCreateCategory(body) { return request('/api/admin/categories', { method: 'POST', body }); },
+  createCategory(body) { return this.adminCreateCategory(body); },
   adminUpdateCategory(categoryId, body) {
     return request(`/api/admin/categories/${encodeURIComponent(categoryId)}`, { method: 'PUT', body });
   },
+  updateCategory(categoryId, body) { return this.adminUpdateCategory(categoryId, body); },
   adminDeleteCategory(categoryId) {
     return request(`/api/admin/categories/${encodeURIComponent(categoryId)}`, { method: 'DELETE' });
   },
+  deleteCategory(categoryId) { return this.adminDeleteCategory(categoryId); },
 
   // Admin CRUD Customers
   adminListCustomers(params = {}) {
@@ -85,12 +91,15 @@ export const api = {
     return this.adminListCustomers(params);
   },
   adminCreateCustomer(body) { return request('/api/admin/customers', { method: 'POST', body }); },
+  createCustomer(body) { return this.adminCreateCustomer(body); },
   adminUpdateCustomer(customerId, body) {
     return request(`/api/admin/customers/${encodeURIComponent(customerId)}`, { method: 'PUT', body });
   },
+  updateCustomer(customerId, body) { return this.adminUpdateCustomer(customerId, body); },
   adminDeleteCustomer(customerId) {
     return request(`/api/admin/customers/${encodeURIComponent(customerId)}`, { method: 'DELETE' });
   },
+  deleteCustomer(customerId) { return this.adminDeleteCustomer(customerId); },
 
   // History
   getMyHistory(params = {}) {
@@ -173,6 +182,12 @@ export const api = {
   },
   getOfflineEvaluation() {
     return request('/api/analytics/offline-evaluation');
+  },
+  getGraphStats() {
+    return request('/api/analytics/graph-stats');
+  },
+  getNeo4jHealth() {
+    return request('/api/health/neo4j');
   },
 };
 
