@@ -15,14 +15,20 @@ const ALGORITHM_DEFINITIONS = [
     badge: 'Hybrid Engine (7 tầng)',
     tagline: 'Tổng hợp 7 tầng: Ý định NLP (<5ms) + Lọc cộng tác + Đa hành vi + Phân rã thời gian + Serendipity',
     formula: 'Score = ∑ (wi · Score_i) × 2^(-Δt / λ) - Penalty',
-    cypher: `// Giai đoạn 1-7: Thu thập đa luồng từ 6 nguồn đồ thị Neo4j:
-// 1. Source A: User-based CF (w = 2.5)
-// 2. Source B: Đa hành vi Mua + Xem (w = 2.0)
-// 3. Source C: Ý định tìm kiếm tiếng Việt NLP (w = 5.0 / 1.8)
-// 4. Source D: Co-bought cùng giỏ hàng (w = 1.5)
-// 5. Source Cross-Category: Serendipity chéo danh mục (w = 1.8)
-// 6. Source F: Fallback / Thịnh hành (w = 0.3)
-// Áp dụng Time-decay 2^(-Δt / λ) và Anti-fatigue Penalty`,
+    cypher: `// 1. Lọc cộng tác đồ thị (User-CF, trọng số w = 2.5):
+MATCH (me:Customer { customerId: $customerId, role: 'customer' })-[:BOUGHT]->(p1:Product)<-[:BOUGHT]-(other:Customer)-[:BOUGHT]->(cand:Product)
+WHERE other <> me AND NOT (me)-[:BOUGHT]->(cand)
+WITH cand, count(DISTINCT other) * 2.5 AS score_cf
+
+// 2. Đa hành vi (Multi-behavior: Mua x3.0 + Xem x1.0, trọng số w = 2.0):
+MATCH (me)-[r1]->(p1)<-[r2]-(peer)-[r3]->(cand)
+WHERE (type(r3) = 'BOUGHT' OR type(r3) = 'VIEWED') AND NOT (me)-[:BOUGHT]->(cand)
+WITH cand, score_cf, (count(CASE WHEN type(r3)='BOUGHT' THEN 1 END)*3.0 + count(CASE WHEN type(r3)='VIEWED' THEN 1 END)*1.0) * 2.0 AS score_multi
+
+// 3. Phân rã thời gian theo hàm mũ (Time-decay) & Xếp hạng Top-K:
+RETURN cand.productId AS productId, cand.name AS name, cand.price AS price,
+       (score_cf + score_multi) * 2^(-cand.ageDays / 14.0) AS score
+ORDER BY score DESC LIMIT $limit`,
     description: 'Động cơ gợi ý lai kết hợp đồng thời lịch sử mua, lịch sử xem, ý định tìm kiếm tiếng Việt bóc tách ngân sách và phân rã thời gian theo hàm mũ để xếp hạng ứng viên tối ưu.',
   },
   {
@@ -116,6 +122,8 @@ export default function Recommendations({
   showAlgorithmFilter = true,
 }) {
   const [selectedAlgo, setSelectedAlgo] = useState('hybrid');
+  const [expandedAlgoId, setExpandedAlgoId] = useState(null);
+  const [copiedQuery, setCopiedQuery] = useState(false);
   const [data, setData] = useState(null);
   const [status, setStatus] = useState({ kind: 'loading', error: null });
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -130,6 +138,19 @@ export default function Recommendations({
   const currentAlgoDef = useMemo(() => {
     return ALGORITHM_DEFINITIONS.find((a) => a.id === selectedAlgo) || ALGORITHM_DEFINITIONS[0];
   }, [selectedAlgo]);
+
+  const expandedAlgoDef = useMemo(() => {
+    if (!expandedAlgoId) return null;
+    return ALGORITHM_DEFINITIONS.find((a) => a.id === expandedAlgoId) || null;
+  }, [expandedAlgoId]);
+
+  const handleCopyCypher = useCallback((code) => {
+    if (!code) return;
+    navigator.clipboard.writeText(code).then(() => {
+      setCopiedQuery(true);
+      setTimeout(() => setCopiedQuery(false), 2000);
+    }).catch(() => {});
+  }, []);
 
   const controllerRef = useRef(null);
   if (!controllerRef.current) {
@@ -321,47 +342,104 @@ export default function Recommendations({
         )}
       </div>
 
-      {/* 2. ALGORITHM FILTER BUTTONS (TÙY CHỌN BỘ LỌC THUẬT TOÁN) */}
+      {/* 2. ALGORITHM FILTER BUTTONS WITH INDIVIDUAL DROPDOWNS & QUICK SELECT */}
       {showAlgorithmFilter && (
         <div className="reco-algo-selector" role="tablist" aria-label="Chọn thuật toán gợi ý">
-          <div className="reco-algo-tabs">
-            {ALGORITHM_DEFINITIONS.map((algo) => {
-              const isActive = selectedAlgo === algo.id;
-              return (
-                <button
-                  key={algo.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={isActive}
-                  className={`reco-algo-btn ${isActive ? 'reco-algo-btn--active' : ''}`}
-                  onClick={() => {
-                    setSelectedAlgo(algo.id);
+          <div className="reco-algo-header-row">
+            <div className="reco-algo-tabs">
+              {ALGORITHM_DEFINITIONS.map((algo) => {
+                const isActive = selectedAlgo === algo.id;
+                const isExpanded = expandedAlgoId === algo.id;
+                return (
+                  <div
+                    key={algo.id}
+                    className={`reco-algo-btn-group ${isActive ? 'reco-algo-btn-group--active' : ''}`}
+                  >
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={isActive}
+                      className={`reco-algo-btn ${isActive ? 'reco-algo-btn--active' : ''}`}
+                      onClick={() => {
+                        setSelectedAlgo(algo.id);
+                        setCurrentIndex(0);
+                      }}
+                      title={algo.tagline}
+                    >
+                      <span className="reco-algo-btn__label">{algo.shortLabel}</span>
+                      {isActive && <span className="reco-algo-btn__dot" aria-hidden="true" />}
+                    </button>
+                    <button
+                      type="button"
+                      className={`reco-algo-dropdown-btn ${isExpanded ? 'reco-algo-dropdown-btn--active' : ''}`}
+                      onClick={() => {
+                        if (isExpanded) {
+                          setExpandedAlgoId(null);
+                        } else {
+                          setExpandedAlgoId(algo.id);
+                          setSelectedAlgo(algo.id);
+                          setCurrentIndex(0);
+                        }
+                      }}
+                      title={`Xem chi tiết mô hình & câu lệnh Cypher của ${algo.shortLabel}`}
+                      aria-label={`Xem chi tiết mô hình & câu lệnh Cypher của ${algo.shortLabel}`}
+                    >
+                      <span style={{ fontSize: '0.6875rem' }}>{isExpanded ? '▲' : '▼'}</span>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Dropdown xem nhanh chi tiết & lệnh Cypher */}
+            <div className="reco-algo-select-wrapper">
+              <select
+                className="reco-algo-select"
+                value={expandedAlgoId || ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (!val) {
+                    setExpandedAlgoId(null);
+                  } else {
+                    setExpandedAlgoId(val);
+                    setSelectedAlgo(val);
                     setCurrentIndex(0);
-                  }}
-                  title={algo.tagline}
-                >
-                  <span className="reco-algo-btn__label">{algo.shortLabel}</span>
-                  {isActive && <span className="reco-algo-btn__dot" aria-hidden="true" />}
-                </button>
-              );
-            })}
+                  }
+                }}
+                aria-label="Chọn xem chi tiết mô hình và câu lệnh Cypher"
+              >
+                <option value="">▼ Xem chi tiết mô hình & câu lệnh Cypher...</option>
+                {ALGORITHM_DEFINITIONS.map((algo) => (
+                  <option key={algo.id} value={algo.id}>
+                    {algo.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
       )}
 
-      {/* 3. ALGORITHM EXPLANATION CARD (THUYẾT MINH THUẬT TOÁN CHO GIÁO VIÊN) */}
-      {showAlgorithmFilter && (
+      {/* 3. ALGORITHM EXPLANATION CARD (CHỈ HIỂN THỊ KHI NGƯỜI DÙNG BẤM DROPDOWN) */}
+      {showAlgorithmFilter && expandedAlgoDef && (
         <div className="reco-explainer-card">
           <div className="reco-explainer-card__top">
             <div className="reco-explainer-card__info">
               <div className="reco-explainer-card__title">
-                <strong>{currentAlgoDef.label}</strong>
-                <span className="reco-formula-badge">{currentAlgoDef.formula}</span>
+                <strong>{expandedAlgoDef.label}</strong>
+                <span className="reco-formula-badge">{expandedAlgoDef.formula}</span>
               </div>
-              <p className="reco-explainer-card__desc">{currentAlgoDef.description}</p>
+              <p className="reco-explainer-card__desc">{expandedAlgoDef.description}</p>
             </div>
 
-            
+            <button
+              type="button"
+              className="reco-explainer-close-btn"
+              onClick={() => setExpandedAlgoId(null)}
+              title="Thu gọn khung giải thích"
+            >
+              ▲ Thu gọn
+            </button>
           </div>
 
           <div className="reco-explainer-card__meta">
@@ -378,7 +456,24 @@ export default function Recommendations({
             </span>
           </div>
 
-          
+          {/* Câu lệnh truy vấn Cypher thực tế trên Neo4j */}
+          {expandedAlgoDef.cypher && (
+            <div className="reco-cypher-box">
+              <div className="reco-cypher-header">
+                <span>Câu lệnh truy vấn Cypher thực thi trên CSDL đồ thị Neo4j:</span>
+                <button
+                  type="button"
+                  className="reco-cypher-copy-btn"
+                  onClick={() => handleCopyCypher(expandedAlgoDef.cypher)}
+                >
+                  {copiedQuery ? 'Đã sao chép ✓' : 'Sao chép câu lệnh'}
+                </button>
+              </div>
+              <pre className="reco-cypher-pre">
+                <code className="reco-cypher-code">{expandedAlgoDef.cypher}</code>
+              </pre>
+            </div>
+          )}
         </div>
       )}
 
