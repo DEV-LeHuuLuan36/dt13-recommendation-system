@@ -691,7 +691,7 @@ def build_presentation():
     # ==========================================
     s12 = prs.slides.add_slide(blank_layout)
     set_slide_background(s12)
-    add_header(s12, "Giao Diện Người Dùng", "Bảng Tin Gợi Ý Thông Minh & Minh Bạch Hóa Thuật Toán", "Tích hợp 5 bộ lọc thuật toán độc lập và ngăn kéo xem trực tiếp câu lệnh Cypher")
+    add_header(s12, "Giao Diện Người Dùng", "Bảng Tin Gợi Ý Thông Minh & Minh Bạch Hóa Thuật Toán", "Tích hợp 5 bộ lọc thuật toán độc lập và thẻ thuyết minh công thức toán học trực quan")
 
     if os.path.exists(USER_IMG):
         card_img = s12.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(0.8), Inches(1.8), Inches(7.5), Inches(5.1))
@@ -714,8 +714,8 @@ def build_presentation():
         "2. Thẻ Công Thức Trực Quan:",
         "   Hiển thị công thức toán học và giải thích tiêu chí xếp hạng tương ứng.",
         "",
-        "3. Ngăn Kéo 'Xem Cypher Query':",
-        "   Bấm vào nút mở drawer hiển thị câu lệnh Cypher thực tế chạy dưới backend.",
+        "3. Huy Hiệu Minh Bạch Lý Do:",
+        "   Mỗi sản phẩm đều gắn tag rõ ràng ('Hybrid 3.4', 'Đa hành vi', 'Serendipity') giải thích vì sao được gợi ý.",
         "",
         "4. Phản Hồi Ẩn & Hoàn Tác:",
         "   Nút Dismiss ẩn sản phẩm không thích và Undo phục hồi ngay lập tức."
@@ -729,7 +729,8 @@ def build_presentation():
         "  + Bấm 'Đa hành vi' để xem kết quả khi có tính thêm lượt xem.\n"
         "  + Bấm 'Chéo Serendipity' để thấy các phụ kiện mua kèm xuất hiện.\n"
         "  + Hoặc bấm 'Hybrid 7 tầng' để thấy kết quả tổng hợp tối ưu nhất.\n"
-        "- Đặc biệt, nhóm có nút '▼ Xem Cypher Query'. Khi bấm vào, hệ thống trượt ra câu lệnh Cypher đang thực thi trong database, giúp chứng minh rõ ràng mối liên hệ giữa thuật toán và cơ sở dữ liệu đồ thị."
+        "- Phía trên danh sách là khung thuyết minh công thức toán học và tiêu chí xếp hạng của thuật toán đang chọn.\n"
+        "- Đồng thời, trên từng thẻ sản phẩm đều có huy hiệu gắn nhãn điểm số minh bạch, cùng nút Ẩn và Hoàn tác theo thời gian thực."
     )
 
     # ==========================================
@@ -970,7 +971,7 @@ def build_presentation():
     p1.alignment = PP_ALIGN.CENTER
 
     p2 = tf.add_paragraph()
-    p2.text = "Trải nghiệm trực tiếp 5 bộ lọc thuật toán • Xem câu lệnh Cypher tức thời • Phân tích mạng nhện đồ thị Admin"
+    p2.text = "Trải nghiệm trực tiếp 5 bộ lọc thuật toán • Thuyết minh công thức trực quan • Phân tích mạng nhện đồ thị Admin"
     p2.font.name = "Segoe UI"
     p2.font.size = Pt(13)
     p2.font.color.rgb = RGBColor(203, 213, 225)
